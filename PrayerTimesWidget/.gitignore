@@ -1,0 +1,13 @@
+# Xcode
+build/
+DerivedData/
+*.xcuserstate
+*.xcuserdata/
+*.xcscheme/xcschemes/
+xcuserdata/
+
+# Provisioning
+*.mobileprovision
+*.p12
+*.cer
+*.key
