@@ -147,7 +147,7 @@ struct PrayerTimesWidgetView: View {
         return VStack(alignment: .leading, spacing: 2) {
             HStack(alignment: .center) {
                 Text("\(next.name) \(next.time)")
-                    .font(.system(size: 18, weight: .semibold, design: .rounded))
+                    .font(.system(size: 18, weight: .light, design: .serif))
                     .lineLimit(1)
                     .minimumScaleFactor(0.75)
 
@@ -155,17 +155,17 @@ struct PrayerTimesWidgetView: View {
 
                 ZStack {
                     Circle()
-                        .fill(Color.white.opacity(0.22))
-                        .frame(width: 28, height: 28)
+                        .fill(Color.brown.opacity(0.6))
+                        .frame(width: 18, height: 18)
 
                     Text(dayNumber())
-                        .font(.system(size: 13, weight: .bold, design: .rounded))
+                        .font(.system(size: 12, weight: .light, design: .serif))
                 }
             }
 
             HStack(spacing: 0) {
                 prayerLockTile(symbol: "sparkles", short: "FJR", time: entry.times.fajr, showDivider: true)
-                prayerLockTile(symbol: "sun.max.fill", short: "JUM", time: entry.times.dhuhr, showDivider: true)
+                prayerLockTile(symbol: "sun.max.fill", short: "DHR", time: entry.times.dhuhr, showDivider: true)
                 prayerLockTile(symbol: "cloud.sun.fill", short: "ASR", time: entry.times.asr, showDivider: true)
                 prayerLockTile(symbol: "sunset.fill", short: "MGB", time: entry.times.maghrib, showDivider: true)
                 prayerLockTile(symbol: "moon.stars.fill", short: "ISH", time: entry.times.isha, showDivider: false)
@@ -173,22 +173,21 @@ struct PrayerTimesWidgetView: View {
             .frame(maxWidth: .infinity)
         }
         .padding(.horizontal, 2)
-        .background(Color.black.opacity(0.92))
     }
 
     private func prayerLockTile(symbol: String, short: String, time: String, showDivider: Bool) -> some View {
         HStack(spacing: 0) {
             VStack(spacing: 3) {
                 Image(systemName: symbol)
-                    .font(.system(size: 13, weight: .medium))
-                    .frame(height: 14)
+                    .font(.system(size: 11, weight: .medium))
+                    .frame(height: 10)
 
                 Text(short)
-                    .font(.system(size: 9, weight: .medium, design: .rounded))
-                    .foregroundStyle(.secondary)
+                    .font(.system(size: 9, weight: .light, design: .default))
+                    .foregroundStyle(.brown)
 
                 Text(time)
-                    .font(.system(size: 13, weight: .bold, design: .rounded))
+                    .font(.system(size: 12, weight: .light, design: .serif))
                     .monospacedDigit()
                     .lineLimit(1)
                     .minimumScaleFactor(0.7)
@@ -206,7 +205,7 @@ struct PrayerTimesWidgetView: View {
     private func dayNumber() -> String {
         let formatter = DateFormatter()
         formatter.dateFormat = "d"
-        return formatter.string(from: entry.date)
+        return entry.times.hijriDay
     }
 
     private func compactRow(_ name: String, _ time: String) -> some View {
@@ -258,7 +257,6 @@ struct PrayerTimesWidgetView: View {
         ]
 
         let now = Date()
-        let calendar = Calendar.current
 
         for prayer in prayers {
             if let prayerDate = timeToDate(prayer.1, base: now),

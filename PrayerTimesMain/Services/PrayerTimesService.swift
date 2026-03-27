@@ -38,6 +38,7 @@ struct PrayerTimesService {
             isha: cleanTime(decoded.data.timings.isha),
             readableDate: decoded.data.date.readable,
             hijriDate: decoded.data.date.hijri.date,
+            hijriDay: decoded.data.date.hijri.day,
             timezone: decoded.data.meta.timezone
         )
     }

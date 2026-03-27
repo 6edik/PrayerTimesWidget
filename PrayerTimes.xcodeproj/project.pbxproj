@@ -54,6 +54,8 @@
 				Shared/PrayerSettings.swift,
 				Shared/PrayerTimes.swift,
 				Shared/PrayerTimesMapper.swift,
+				Shared/RefreshStats.swift,
+				Shared/RefreshStatsStore.swift,
 				Shared/SharedPrayerSettingsStore.swift,
 				Shared/SharedPrayerTimesStore.swift,
 			);
@@ -67,12 +69,20 @@
 			);
 			target = A3700E1D2F61A949004CB90A /* PrayerTimesWidgetExtension */;
 		};
+		A382BA002F75EF9C00E5A200 /* Exceptions for "PrayerTimesMain" folder in "PrayerTimesMain" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = A34DD12B2F5F104800172E56 /* PrayerTimesMain */;
+		};
 /* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		A34DD12E2F5F104800172E56 /* PrayerTimesMain */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			exceptions = (
+				A382BA002F75EF9C00E5A200 /* Exceptions for "PrayerTimesMain" folder in "PrayerTimesMain" target */,
 				A3700E612F61ACF8004CB90A /* Exceptions for "PrayerTimesMain" folder in "PrayerTimesWidgetExtension" target */,
 			);
 			path = PrayerTimesMain;
@@ -397,6 +407,7 @@
 				DEVELOPMENT_TEAM = QQAS9WV7AD;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = PrayerTimesMain/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = "Authentic PT";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
@@ -431,6 +442,7 @@
 				DEVELOPMENT_TEAM = QQAS9WV7AD;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = PrayerTimesMain/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = "Authentic PT";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;

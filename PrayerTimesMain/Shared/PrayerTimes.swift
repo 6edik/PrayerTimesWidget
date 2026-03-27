@@ -8,5 +8,6 @@ struct PrayerTimes: Codable {
     let isha: String
     let readableDate: String
     let hijriDate: String
+    let hijriDay: String
     let timezone: String
 }
