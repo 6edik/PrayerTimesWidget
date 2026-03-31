@@ -28,128 +28,390 @@ struct PrayerTimesWidgetView: View {
     }
 
     private var homeSmallView: some View {
-        let next = nextPrayerInfo()
+        let current = currentAndNextPrayerInfo().currentName
 
-        return VStack(alignment: .leading, spacing: 10) {
-            HStack {
-                Text("Nächstes Gebet")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                Spacer()
-                Text(shortTimezone(entry.times.timezone))
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
+        return VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: 4) {
+                Text(smallHijriHeader())
+                    .font(.system(size: 11, weight: .semibold, design: .serif))
+                    .kerning(0.4)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+
+                Text(smallGregorianHeader())
+                    .font(.system(size: 11, weight: .semibold, design: .serif))
+                    .kerning(0.4)
+                    .frame(maxWidth: .infinity, alignment: .trailing)
             }
-
-            VStack(alignment: .leading, spacing: 2) {
-                Text(next.name)
-                    .font(.headline)
-                    .foregroundStyle(accent)
-
-                Text(next.time)
-                    .font(.system(size: 28, weight: .bold, design: .rounded))
-                    .monospacedDigit()
-            }
+            .foregroundStyle(Color.orange.opacity(0.95))
+            .lineLimit(1)
+            .frame(maxWidth: .infinity, alignment: .topLeading)
 
             Divider()
+                .overlay(Color.white.opacity(0.10))
+                .padding(.top, 8)
+                .padding(.bottom, 10)
 
-            VStack(spacing: 6) {
-                compactRow("Fajr", entry.times.fajr)
-                compactRow("Dhuhr", entry.times.dhuhr)
-                compactRow("Asr", entry.times.asr)
+            VStack(spacing: 4) {
+                smallPrayerRow(icon: "sparkles", name: "Fajr", time: entry.times.fajr, isActive: current == "Fajr")
+                smallPrayerRow(icon: "sunrise.fill", name: "Sunrise", time: entry.times.shuruk, isActive: current == "Shuruk")
+                smallPrayerRow(icon: "sun.max.fill", name: "Dhuhr", time: entry.times.dhuhr, isActive: current == "Dhuhr")
+                smallPrayerRow(icon: "cloud.sun.fill", name: "Asr", time: entry.times.asr, isActive: current == "Asr")
+                smallPrayerRow(icon: "sunset.fill", name: "Maghrib", time: entry.times.maghrib, isActive: current == "Maghrib")
+                smallPrayerRow(icon: "moon.stars.fill", name: "Isha", time: entry.times.isha, isActive: current == "Isha")
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    }
+    
+    private func smallPrayerRow(
+        icon: String,
+        name: String,
+        time: String,
+        isActive: Bool
+    ) -> some View {
+        HStack(spacing: 0) {
+            Image(systemName: icon)
+                .font(.system(size: 10, weight: .medium))
+                .frame(width: 16, alignment: .leading)
+                .foregroundStyle(isActive ? .white : Color.white.opacity(0.72))
 
-            Spacer(minLength: 0)
+            Spacer()
+            
+            Text(name)
+                .font(.system(size: 13, weight: isActive ? .semibold : .regular, design: .serif))
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .foregroundStyle(isActive ? .white : Color.white.opacity(0.72))
+
+            Text(time)
+                .font(.system(size: 13, weight: isActive ? .semibold : .regular, design: .serif))
+                .monospacedDigit()
+                .frame(maxWidth: .infinity, alignment: .trailing)
+                .foregroundStyle(isActive ? .white : Color.white.opacity(0.72))
+        }
+    }
+
+    private func smallGregorianHeader() -> String {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.dateFormat = "d. MMM"
+        return formatter.string(from: entry.date).uppercased()
+    }
+
+    private func smallHijriHeader() -> String {
+        let raw = entry.times.hijriDate.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        let separators = CharacterSet(charactersIn: "-./ ")
+        let parts = raw.components(separatedBy: separators).filter { !$0.isEmpty }
+
+        guard parts.count >= 2 else {
+            return raw.uppercased()
+        }
+
+        let day = parts[0]
+
+        let monthNumber = Int(parts[1]) ?? 0
+        let month: String
+
+        switch monthNumber {
+        case 1:  month = "MUH"
+        case 2:  month = "SFR"
+        case 3:  month = "R-AW"
+        case 4:  month = "R-TH"
+        case 5:  month = "J-AW"
+        case 6:  month = "J-TH"
+        case 7:  month = "RAJB."
+        case 8:  month = "SHBN"
+        case 9:  month = "RMD"
+        case 10: month = "SHWL"
+        case 11: month = "DHQD"
+        case 12: month = "DHHJ"
+        default: month = parts[1].uppercased()
+        }
+
+        return "\(day). \(month)"
+    }
+    
+    private var homeMediumView: some View {
+        let window = prayerWindow()
+
+        return HStack(spacing: 14) {
+            VStack(alignment: .leading, spacing: 10) {
+                HStack(spacing: 0) {
+                    Text(smallGregorianHeader())
+                        .font(.system(size: 11, weight: .semibold, design: .serif))
+                        .kerning(0.4)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    Text(smallHijriHeader())
+                        .font(.system(size: 11, weight: .semibold, design: .serif))
+                        .kerning(0.4)
+                        .frame(maxWidth: .infinity, alignment: .trailing)
+                }
+                .foregroundStyle(Color.white.opacity(0.65))
+                .lineLimit(1)
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Aktuell")
+                        .font(.system(size: 11, weight: .medium, design: .serif))
+                        .foregroundStyle(Color.orange.opacity(0.9))
+                    
+                    HStack(spacing: 5){
+                        Text(window.currentName)
+                            .font(.system(size: 15, weight: .semibold, design: .serif))
+                            .foregroundStyle(.white)
+                        
+                        Text(window.currentTime)
+                            .font(.system(size: 20, weight: .bold, design: .serif))
+                            .monospacedDigit()
+                            .foregroundStyle(.white)
+                    }
+                }
+
+                VStack(alignment: .leading, spacing: 2) {
+                    HStack(alignment: .firstTextBaseline) {
+                        Text("Noch")
+                            .font(.system(size: 12, weight: .medium, design: .serif))
+                            .foregroundStyle(Color.white.opacity(0.68))
+
+                        Text(window.end, style: .timer)
+                            .font(.system(size: 18, weight: .bold, design: .serif))
+                            .monospacedDigit()
+                            .foregroundStyle(Color.orange.opacity(0.95))
+                    }
+
+                    Text("bis \(window.nextName)")
+                        .font(.system(size: 12, weight: .medium, design: .serif))
+                        .foregroundStyle(Color.white.opacity(0.68))
+
+                    GeometryReader { geo in
+                        ZStack(alignment: .leading) {
+                            Capsule()
+                                .fill(Color.white.opacity(0.10))
+
+                            Capsule()
+                                .fill(
+                                    LinearGradient(
+                                        colors: [
+                                            Color.orange.opacity(0.95),
+                                            Color.yellow.opacity(0.85)
+                                        ],
+                                        startPoint: .leading,
+                                        endPoint: .trailing
+                                    )
+                                )
+                                .frame(width: max(10, geo.size.width * window.progress))
+                        }
+                    }
+                    .frame(height: 8)
+
+                    HStack {
+                        Text(window.currentName)
+                        Spacer()
+                        Text(window.nextName)
+                    }
+                    .font(.system(size: 10, weight: .medium, design: .serif))
+                    .foregroundStyle(Color.white.opacity(0.48))
+                }
+
+                Spacer(minLength: 0)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(14)
+
+            VStack(spacing: 7) {
+                mediumPrayerRow("Fajr", entry.times.fajr, isCurrent: window.currentName == "Fajr", isNext: window.nextName == "Fajr")
+                mediumPrayerRow("Shuruk", entry.times.shuruk, isCurrent: window.currentName == "Shuruk", isNext: window.nextName == "Shuruk")
+                mediumPrayerRow("Dhuhr", entry.times.dhuhr, isCurrent: window.currentName == "Dhuhr", isNext: window.nextName == "Dhuhr")
+                mediumPrayerRow("Asr", entry.times.asr, isCurrent: window.currentName == "Asr", isNext: window.nextName == "Asr")
+                mediumPrayerRow("Maghrib", entry.times.maghrib, isCurrent: window.currentName == "Maghrib", isNext: window.nextName == "Maghrib")
+                mediumPrayerRow("Isha", entry.times.isha, isCurrent: window.currentName == "Isha", isNext: window.nextName == "Isha")
+            }
+            .frame(width: 120, alignment: .leading)
         }
         .padding()
     }
 
-    private var homeMediumView: some View {
-        let next = nextPrayerInfo()
+    private func mediumPrayerRow(
+        _ name: String,
+        _ time: String,
+        isCurrent: Bool,
+        isNext: Bool
+    ) -> some View {
+        HStack {
+            Text(name)
+                .font(.system(size: 11, weight: isCurrent ? .semibold : .regular, design: .serif))
+                .foregroundStyle(isCurrent ? .white : (isNext ? Color.orange.opacity(0.92) : Color.white.opacity(0.62)))
 
-        return HStack(spacing: 14) {
-            VStack(alignment: .leading, spacing: 8) {
-                Text("Gebetszeiten")
-                    .font(.headline)
+            Spacer(minLength: 6)
 
-                HStack(spacing: 6) {
-                    Text(entry.times.readableDate)
-                    Text("•")
-                    Text(entry.times.hijriDate)
-                }
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .lineLimit(1)
-
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("Nächstes Gebet")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-
-                    Text(next.name)
-                        .font(.title3.weight(.semibold))
-                        .foregroundStyle(accent)
-
-                    Text(next.time)
-                        .font(.system(size: 26, weight: .bold, design: .rounded))
-                        .monospacedDigit()
-                }
-                Spacer()
-
-                Text(shortTimezone(entry.times.timezone))
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-
-            VStack(spacing: 8) {
-                detailedRow("Fajr", entry.times.fajr)
-                detailedRow("Dhuhr", entry.times.dhuhr)
-                detailedRow("Asr", entry.times.asr)
-                detailedRow("Maghrib", entry.times.maghrib)
-                detailedRow("Isha", entry.times.isha)
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
+            Text(time)
+                .font(.system(size: 11, weight: isCurrent ? .semibold : .regular, design: .serif))
+                .monospacedDigit()
+                .foregroundStyle(isCurrent ? .white : (isNext ? Color.orange.opacity(0.92) : Color.white.opacity(0.62)))
         }
-        .padding()
+        .padding(.vertical, 4)
+        .padding(.horizontal, 8)
+        .background(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .fill(isCurrent ? Color.white.opacity(0.09) : (isNext ? Color.orange.opacity(0.12) : Color.clear))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .stroke(isCurrent ? Color.white.opacity(0.08) : Color.clear, lineWidth: 1)
+        )
+    }
+    
+    private func prayerWindow() -> (
+        currentName: String,
+        currentTime: String,
+        nextName: String,
+        nextTime: String,
+        start: Date,
+        end: Date,
+        progress: Double
+    ) {
+        let info = currentAndNextPrayerInfo()
+        let now = entry.date
+        let calendar = Calendar.current
+
+        if let fajrDate = timeToDate(entry.times.fajr, base: now),
+           now < fajrDate {
+            let yesterdayBase = calendar.date(byAdding: .day, value: -1, to: now) ?? now
+            let start = timeToDate(entry.previousDayTimes?.isha ?? "--:--", base: yesterdayBase) ?? yesterdayBase
+            let end = fajrDate
+
+            return (
+                currentName: "Isha",
+                currentTime: entry.previousDayTimes?.isha ?? "--:--",
+                nextName: "Fajr",
+                nextTime: entry.times.fajr,
+                start: start,
+                end: end,
+                progress: progressValue(now: now, start: start, end: end)
+            )
+        }
+
+        let prayers: [(name: String, time: String)] = [
+            ("Fajr", entry.times.fajr),
+            ("Shuruk", entry.times.shuruk),
+            ("Dhuhr", entry.times.dhuhr),
+            ("Asr", entry.times.asr),
+            ("Maghrib", entry.times.maghrib),
+            ("Isha", entry.times.isha)
+        ]
+
+        for index in prayers.indices {
+            guard let start = timeToDate(prayers[index].time, base: now) else { continue }
+
+            let end: Date
+            let nextName: String
+            let nextTime: String
+
+            if index + 1 < prayers.count,
+               let next = timeToDate(prayers[index + 1].time, base: now) {
+                end = next
+                nextName = prayers[index + 1].name
+                nextTime = prayers[index + 1].time
+            } else {
+                let tomorrow = calendar.date(byAdding: .day, value: 1, to: now) ?? now
+                let tomorrowFajr = calendar.date(
+                    bySettingHour: Int(entry.times.fajr.split(separator: ":").first ?? "0") ?? 0,
+                    minute: Int(entry.times.fajr.split(separator: ":").dropFirst().first ?? "0") ?? 0,
+                    second: 0,
+                    of: tomorrow
+                ) ?? tomorrow
+                end = tomorrowFajr
+                nextName = "Fajr"
+                nextTime = entry.times.fajr
+            }
+
+            if now >= start && now < end {
+                return (
+                    currentName: prayers[index].name,
+                    currentTime: prayers[index].time,
+                    nextName: nextName,
+                    nextTime: nextTime,
+                    start: start,
+                    end: end,
+                    progress: progressValue(now: now, start: start, end: end)
+                )
+            }
+        }
+
+        let fallbackStart = timeToDate(entry.times.fajr, base: now) ?? now
+        let fallbackEnd = timeToDate(entry.times.dhuhr, base: now) ?? now.addingTimeInterval(60 * 60)
+
+        return (
+            currentName: info.currentName,
+            currentTime: info.currentTime,
+            nextName: info.nextName,
+            nextTime: info.nextTime,
+            start: fallbackStart,
+            end: fallbackEnd,
+            progress: progressValue(now: now, start: fallbackStart, end: fallbackEnd)
+        )
+    }
+    
+    private func progressValue(now: Date, start: Date, end: Date) -> Double {
+        let total = end.timeIntervalSince(start)
+        guard total > 0 else { return 0 }
+
+        let elapsed = now.timeIntervalSince(start)
+        return min(max(elapsed / total, 0), 1)
     }
 
     private var lockInlineView: some View {
-        let next = nextPrayerInfo()
+        let next = currentAndNextPrayerInfo()
 
-        return Text("\(next.name) \(next.time)")
+        return Text("\(next.currentName) \(next.currentTime)")
             .font(.caption)
             .monospacedDigit()
     }
 
     private var lockCircularView: some View {
-        let next = nextPrayerInfo()
+        let next = currentAndNextPrayerInfo()
 
         return ZStack {
             AccessoryWidgetBackground()
 
-            VStack(spacing: 2) {
-                Text(shortLabel(next.name))
-                    .font(.system(size: 12, weight: .semibold, design: .rounded))
-                    .foregroundStyle(accent)
+            VStack(spacing: 1) {
+                VStack(spacing: 1) {
+                    Text(shortLabel(next.currentName))
+                        .font(.system(size: 11, weight: .semibold, design: .serif))
+                        .foregroundStyle(accent)
 
-                //Text(shortClock(next.time))
-                Text(next.time)
-                    .font(.system(size: 14, weight: .bold, design: .rounded))
-                    .monospacedDigit()
+                    Text(next.currentTime)
+                        .font(.system(size: 14, weight: .bold, design: .serif))
+                        .monospacedDigit()
+                }
+
+                Rectangle()
+                    .fill(Color.white.opacity(0.18))
+                    .frame(width: 38, height: 1)
+
+                HStack(spacing: 2) {
+                    Text(shortLabel(next.nextName))
+                        .font(.system(size: 7, weight: .semibold, design: .serif))
+                        .foregroundStyle(accent)
+
+                    Text(next.nextTime)
+                        .font(.system(size: 8, weight: .bold, design: .serif))
+                        .monospacedDigit()
+                }
             }
         }
     }
 
     private var lockRectangularView: some View {
-        let next = nextPrayerInfo()
+        let next = currentAndNextPrayerInfo()
 
         return VStack(alignment: .leading, spacing: 2) {
             HStack(alignment: .center) {
-                Text("\(next.name) \(next.time)")
+                Text("\(next.currentName) \(next.currentTime)")
                     .font(.system(size: 18, weight: .light, design: .serif))
                     .lineLimit(1)
                     .minimumScaleFactor(0.75)
+                    .fontDesign(.serif)
 
                 Spacer()
 
@@ -165,6 +427,7 @@ struct PrayerTimesWidgetView: View {
 
             HStack(spacing: 0) {
                 prayerLockTile(symbol: "sparkles", short: "FJR", time: entry.times.fajr, showDivider: true)
+                prayerLockTile(symbol: "sunrise.fill", short: "SRK", time: entry.times.shuruk, showDivider: true)
                 prayerLockTile(symbol: "sun.max.fill", short: "DHR", time: entry.times.dhuhr, showDivider: true)
                 prayerLockTile(symbol: "cloud.sun.fill", short: "ASR", time: entry.times.asr, showDivider: true)
                 prayerLockTile(symbol: "sunset.fill", short: "MGB", time: entry.times.maghrib, showDivider: true)
@@ -183,7 +446,7 @@ struct PrayerTimesWidgetView: View {
                     .frame(height: 10)
 
                 Text(short)
-                    .font(.system(size: 9, weight: .light, design: .default))
+                    .font(.system(size: 9, weight: .light, design: .serif))
                     .foregroundStyle(.brown)
 
                 Text(time)
@@ -201,11 +464,12 @@ struct PrayerTimesWidgetView: View {
         }
         .frame(maxWidth: .infinity)
     }
-    
+
     private func dayNumber() -> String {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "d"
-        return entry.times.hijriDay
+        entry.times.hijriDate
+            .split(separator: "-")
+            .first
+            .map(String.init) ?? "--"
     }
 
     private func compactRow(_ name: String, _ time: String) -> some View {
@@ -236,43 +500,65 @@ struct PrayerTimesWidgetView: View {
         .clipShape(RoundedRectangle(cornerRadius: 8))
     }
 
-    private func pill(_ name: String, _ time: String) -> some View {
-        HStack(spacing: 4) {
-            Text(name)
-                .foregroundStyle(.secondary)
-            Text(time)
-                .fontWeight(.semibold)
-                .monospacedDigit()
-        }
-        .font(.caption2)
-    }
+    private func currentAndNextPrayerInfo() -> (
+        currentName: String,
+        currentTime: String,
+        nextName: String,
+        nextTime: String
+    ) {
+        let now = entry.date
 
-    private func nextPrayerInfo() -> (name: String, time: String) {
-        let prayers: [(String, String)] = [
+        if let fajrDate = timeToDate(entry.times.fajr, base: now),
+           now < fajrDate {
+            return (
+                currentName: "Isha",
+                currentTime: entry.previousDayTimes?.isha ?? "--:--",
+                nextName: "Fajr",
+                nextTime: entry.times.fajr
+            )
+        }
+
+        let prayers: [(name: String, time: String)] = [
             ("Fajr", entry.times.fajr),
+            ("Shuruk", entry.times.shuruk),
             ("Dhuhr", entry.times.dhuhr),
             ("Asr", entry.times.asr),
             ("Maghrib", entry.times.maghrib),
             ("Isha", entry.times.isha)
         ]
 
-        let now = Date()
+        var currentName = "Fajr"
+        var currentTime = entry.times.fajr
+        var nextName = "Dhuhr"
+        var nextTime = entry.times.dhuhr
 
-        for prayer in prayers {
-            if let prayerDate = timeToDate(prayer.1, base: now),
-               prayerDate > now {
-                return prayer
+        for (index, prayer) in prayers.enumerated() {
+            guard let prayerDate = timeToDate(prayer.time, base: now) else { continue }
+
+            if prayerDate <= now {
+                currentName = prayer.name
+                currentTime = prayer.time
+
+                if index + 1 < prayers.count {
+                    nextName = prayers[index + 1].name
+                    nextTime = prayers[index + 1].time
+                } else {
+                    nextName = "Fajr"
+                    nextTime = entry.times.fajr
+                }
             }
         }
 
-        return ("Fajr", entry.times.fajr)
+        return (currentName, currentTime, nextName, nextTime)
     }
-
+    
     private func timeToDate(_ value: String, base: Date) -> Date? {
         let parts = value.split(separator: ":")
         guard parts.count >= 2,
               let hour = Int(parts[0]),
-              let minute = Int(parts[1]) else { return nil }
+              let minute = Int(parts[1]) else {
+            return nil
+        }
 
         return Calendar.current.date(
             bySettingHour: hour,
@@ -281,20 +567,17 @@ struct PrayerTimesWidgetView: View {
             of: base
         )
     }
-
+    
     private func shortLabel(_ value: String) -> String {
         switch value {
         case "Fajr": return "FJR"
+        case "Shuruk": return "SRK"
         case "Dhuhr": return "DHR"
         case "Asr": return "ASR"
         case "Maghrib": return "MGB"
         case "Isha": return "ISH"
-        default: return value.prefix(3).uppercased()
+        default: return String(value.prefix(3)).uppercased()
         }
-    }
-
-    private func shortClock(_ value: String) -> String {
-        value.replacingOccurrences(of: ":", with: "")
     }
 
     private func shortTimezone(_ value: String) -> String {

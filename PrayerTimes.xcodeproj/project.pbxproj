@@ -48,14 +48,17 @@
 		A3700E612F61ACF8004CB90A /* Exceptions for "PrayerTimesMain" folder in "PrayerTimesWidgetExtension" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
+				Models/PrayerTimesCache.swift,
 				Models/PrayerTimesResponse.swift,
 				Services/PrayerTimesService.swift,
 				Shared/AppGroup.swift,
+				Shared/PrayerCachePolicy.swift,
 				Shared/PrayerSettings.swift,
 				Shared/PrayerTimes.swift,
 				Shared/PrayerTimesMapper.swift,
 				Shared/RefreshStats.swift,
 				Shared/RefreshStatsStore.swift,
+				Shared/SharedPrayerCacheRefresher.swift,
 				Shared/SharedPrayerSettingsStore.swift,
 				Shared/SharedPrayerTimesStore.swift,
 			);

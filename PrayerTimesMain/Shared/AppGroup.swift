@@ -1,6 +1,6 @@
 import Foundation
 
 enum AppGroup {
-    static let id = "group.com.mertgedik.prayertimes"
-    static let widgetKind = "PrayerTimesWidget"
+    nonisolated static let id = "group.com.mertgedik.prayertimes"
+    nonisolated static let widgetKind = "PrayerTimesWidget"
 }

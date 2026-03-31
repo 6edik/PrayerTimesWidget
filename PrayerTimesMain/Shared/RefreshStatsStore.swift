@@ -9,9 +9,8 @@ enum RefreshSource: String, Codable {
 }
 
 struct RefreshStatsStore {
-    private let defaults = UserDefaults(suiteName: AppGroup.id)
+    private var defaults: UserDefaults? {UserDefaults(suiteName: AppGroup.id)}
     private let key = "refresh_stats"
-
     func load() -> RefreshStats {
         guard
             let data = defaults?.data(forKey: key),

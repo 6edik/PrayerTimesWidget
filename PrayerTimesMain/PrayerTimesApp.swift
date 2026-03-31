@@ -6,7 +6,7 @@ import WidgetKit
 struct PrayerTimesApp: App {
     @Environment(\.scenePhase) private var scenePhase
 
-    private static let refreshIdentifier = "com.mertgedik.prayertimes.refresh"
+    nonisolated private static let refreshIdentifier = "com.mertgedik.prayertimes.refresh"
 
     init() {
         BGTaskScheduler.shared.register(forTaskWithIdentifier: Self.refreshIdentifier, using: nil) { task in
@@ -17,6 +17,7 @@ struct PrayerTimesApp: App {
     var body: some Scene {
         WindowGroup {
             ContentView()
+                .fontDesign(.serif)
                 .task {
                     Self.scheduleAppRefresh()
                 }
@@ -28,21 +29,35 @@ struct PrayerTimesApp: App {
         }
     }
 
-    private static func scheduleAppRefresh() {
-        let request = BGAppRefreshTaskRequest(identifier: refreshIdentifier)
-        request.earliestBeginDate = nextDesiredRefreshDate()
+    nonisolated private static func scheduleAppRefresh() {
+        Task {
+            let preferred = await MainActor.run {
+                let settings = SharedPrayerSettingsStore().load()
+                let store = SharedPrayerTimesStore()
 
-        do {
-            try BGTaskScheduler.shared.submit(request)
-            RefreshStatsStore().setNextPlannedRefresh(request.earliestBeginDate)
-        } catch {
-            print("BG refresh scheduling failed:", error)
+                return store.suggestedRefreshDate(
+                    settings: settings,
+                    refreshThresholdDays: 2
+                )
+            }
+
+            let request = BGAppRefreshTaskRequest(identifier: refreshIdentifier)
+            request.earliestBeginDate = normalizedEarliestDate(preferred)
+
+            do {
+                try BGTaskScheduler.shared.submit(request)
+
+                await MainActor.run {
+                    RefreshStatsStore().setNextPlannedRefresh(request.earliestBeginDate)
+                }
+            } catch {
+                print("BG refresh scheduling failed:", error)
+            }
         }
     }
 
-    private static func handleAppRefresh(task: BGAppRefreshTask) {
+    nonisolated private static func handleAppRefresh(task: BGAppRefreshTask) {
         scheduleAppRefresh()
-        RefreshStatsStore().markAttempt(source: .backgroundTask)
 
         let queue = OperationQueue()
         queue.maxConcurrentOperationCount = 1
@@ -51,22 +66,74 @@ struct PrayerTimesApp: App {
             let semaphore = DispatchSemaphore(value: 0)
 
             Task {
-                let settings = SharedPrayerSettingsStore().load()
                 let service = PrayerTimesService()
-                let store = SharedPrayerTimesStore()
-                let statsStore = RefreshStatsStore()
+
+                let (store, statsStore, settings) = await MainActor.run {
+                    let store = SharedPrayerTimesStore()
+                    let settingsStore = SharedPrayerSettingsStore()
+                    let statsStore = RefreshStatsStore()
+                    let settings = settingsStore.load()
+                    return (store, statsStore, settings)
+                }
+
+                let shouldFetch = await MainActor.run {
+                    !store.hasToday(for: settings, referenceDate: Date()) ||
+                    store.needsRefresh(
+                        settings: settings,
+                        referenceDate: Date(),
+                        refreshThresholdDays: 2
+                    )
+                }
+
+                if !shouldFetch {
+                    await MainActor.run {
+                        statsStore.setNextPlannedRefresh(
+                            store.suggestedRefreshDate(
+                                settings: settings,
+                                refreshThresholdDays: 2
+                            )
+                        )
+                    }
+                    semaphore.signal()
+                    return
+                }
+
+                await MainActor.run {
+                    statsStore.markAttempt(source: .backgroundTask)
+                }
 
                 do {
-                    let times = try await service.fetchPrayerTimes(settings: settings)
-                    store.save(times)
-                    UserDefaults(suiteName: AppGroup.id)?.set(Date(), forKey: "last_refresh")
+                    let now = Date()
+                    let fetchStart = Calendar.current.date(byAdding: .day, value: -1, to: now) ?? now
 
-                    statsStore.markSuccess(source: .backgroundTask)
-                    statsStore.incrementWidgetReloadCount()
+                    let cache = try await service.fetchPrayerTimesCache(
+                        settings: settings,
+                        referenceDate: fetchStart,
+                        coverageDays: 8
+                    )
+
+                    await MainActor.run {
+                        store.saveCache(cache)
+                        UserDefaults(suiteName: AppGroup.id)?.set(Date(), forKey: "last_refresh")
+
+                        statsStore.markSuccess(source: .backgroundTask)
+                        statsStore.incrementWidgetReloadCount()
+                        statsStore.setNextPlannedRefresh(
+                            store.suggestedRefreshDate(
+                                settings: settings,
+                                refreshThresholdDays: 2
+                            )
+                        )
+                    }
 
                     WidgetCenter.shared.reloadTimelines(ofKind: AppGroup.widgetKind)
                 } catch {
-                    statsStore.markFailure(source: .backgroundTask, error: error.localizedDescription)
+                    await MainActor.run {
+                        statsStore.markFailure(
+                            source: .backgroundTask,
+                            error: error.localizedDescription
+                        )
+                    }
                     print("Background refresh failed:", error)
                 }
 
@@ -87,11 +154,9 @@ struct PrayerTimesApp: App {
         queue.addOperation(operation)
     }
 
-    private static func nextDesiredRefreshDate() -> Date {
-        let calendar = Calendar.current
-        let now = Date()
-        let tomorrow = calendar.date(byAdding: .day, value: 1, to: now) ?? now
-        let startOfTomorrow = calendar.startOfDay(for: tomorrow)
-        return calendar.date(byAdding: .minute, value: 1, to: startOfTomorrow) ?? Date().addingTimeInterval(15 * 60)
+    nonisolated private static func normalizedEarliestDate(_ preferred: Date?) -> Date {
+        let minimum = Date().addingTimeInterval(15 * 60)
+        guard let preferred else { return minimum }
+        return preferred > minimum ? preferred : minimum
     }
 }

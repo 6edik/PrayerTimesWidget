@@ -3,6 +3,7 @@ import SwiftUI
 struct StatisticsView: View {
     private let statsStore = RefreshStatsStore()
     private let settingsStore = SharedPrayerSettingsStore()
+    private let prayerStore = SharedPrayerTimesStore()
 
     @State private var stats = RefreshStats.empty
     @State private var settings = PrayerSettings(
@@ -10,6 +11,11 @@ struct StatisticsView: View {
         date: Date(),
         method: PrayerCalculationMethod.diyanet.rawValue
     )
+
+    @State private var cacheRange = "--"
+    @State private var cacheDayCount = 0
+    @State private var cacheFetchedAt: Date?
+    @State private var remainingCoverageDays: Int?
 
     var body: some View {
         NavigationStack {
@@ -21,6 +27,13 @@ struct StatisticsView: View {
                     statRow("Nächste Planung", formatted(stats.nextPlannedRefreshAt))
                     statRow("Letzte Quelle", stats.lastSource ?? "--")
                     statRow("Letzter Fehlertext", stats.lastError ?? "--")
+                }
+
+                Section("Cache") {
+                    statRow("Zeitraum", cacheRange)
+                    statRow("Gespeicherte Tage", "\(cacheDayCount)")
+                    statRow("Letzter Cache-Fetch", formatted(cacheFetchedAt))
+                    statRow("Resttage ab heute", remainingCoverageText())
                 }
 
                 Section("Quellen-Zähler") {
@@ -48,7 +61,7 @@ struct StatisticsView: View {
                 }
 
                 Section("Hinweis") {
-                    Text("Background-Refresh und Widget-Updates werden von iOS geplant und nicht sekundengenau garantiert.")
+                    Text("Sobald nur noch 2 Tage Abdeckung übrig sind, sollte die App den Wochen-Cache erneut laden.")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                 }
@@ -87,9 +100,29 @@ struct StatisticsView: View {
         date.formatted(date: .abbreviated, time: .omitted)
     }
 
+    private func remainingCoverageText() -> String {
+        guard let remainingCoverageDays else { return "--" }
+
+        switch remainingCoverageDays {
+        case ..<0:
+            return "Abgelaufen"
+        case 0:
+            return "Heute letzter Tag"
+        case 1:
+            return "1 Tag"
+        default:
+            return "\(remainingCoverageDays) Tage"
+        }
+    }
+
     private func reload() {
         stats = statsStore.load()
         settings = settingsStore.load()
+
+        cacheRange = prayerStore.cacheRangeText()
+        cacheDayCount = prayerStore.cacheDayCount()
+        cacheFetchedAt = prayerStore.cacheFetchedAt()
+        remainingCoverageDays = prayerStore.remainingCoverageDays()
     }
 }
 
