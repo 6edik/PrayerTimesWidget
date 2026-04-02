@@ -1,28 +1,26 @@
 import Foundation
 
 struct SharedPrayerSettingsStore {
-    private var defaults: UserDefaults? {
-        UserDefaults(suiteName: AppGroup.id)
-    }
+    private let defaults = UserDefaults(suiteName: AppGroup.id)
+    private let key = "auto_prayer_settings_v1"
 
-    private let key = "prayer_settings"
-
-    func load() -> PrayerSettings {
+    func loadAutoSettings() -> AutoPrayerSettings {
         guard
             let data = defaults?.data(forKey: key),
-            let settings = try? JSONDecoder().decode(PrayerSettings.self, from: data)
+            let decoded = try? JSONDecoder().decode(AutoPrayerSettings.self, from: data)
         else {
-            return PrayerSettings(
-                address: "Gelsenkirchen, Germany",
-                date: Date(),
-                method: PrayerCalculationMethod.diyanet.rawValue
-            )
+            return AutoPrayerSettings()
         }
-        return settings
+
+        return decoded
     }
 
-    func save(_ settings: PrayerSettings) {
+    func saveAutoSettings(_ settings: AutoPrayerSettings) {
         guard let data = try? JSONEncoder().encode(settings) else { return }
         defaults?.set(data, forKey: key)
+    }
+
+    func loadPrayerSettings(for date: Date = Date()) -> PrayerSettings {
+        loadAutoSettings().asPrayerSettings(for: date)
     }
 }

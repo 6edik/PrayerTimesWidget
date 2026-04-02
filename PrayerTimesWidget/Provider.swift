@@ -15,24 +15,26 @@ struct Provider: TimelineProvider {
         maghrib: "--:--",
         isha: "--:--",
         readableDate: "--",
-        readableDay:"--",
+        readableDay: "--",
         hijriDate: "--",
         hijriDay: "--",
         timezone: "--"
     )
 
     func placeholder(in context: Context) -> PrayerEntry {
-        makeEntry(for: Date())
+        let settings = settingsStore.loadAutoSettings()
+        return makeEntry(for: Date(), settings: settings)
     }
 
     func getSnapshot(in context: Context, completion: @escaping (PrayerEntry) -> Void) {
-        completion(makeEntry(for: Date()))
+        let settings = settingsStore.loadAutoSettings()
+        completion(makeEntry(for: Date(), settings: settings))
     }
 
     func getTimeline(in context: Context, completion: @escaping (Timeline<PrayerEntry>) -> Void) {
         Task {
             let now = Date()
-            let settings = settingsStore.load()
+            let settings = settingsStore.loadAutoSettings()
 
             let shouldFetch =
                 !store.hasFullRange(for: now, settings: settings) ||
@@ -65,14 +67,14 @@ struct Provider: TimelineProvider {
                     )
 
                     let retry = now.addingTimeInterval(30 * 60)
-                    let entries = buildEntries(from: now)
+                    let entries = buildEntries(from: now, settings: settings)
 
                     statsStore.incrementTimelineBuildCount()
                     statsStore.setNextPlannedRefresh(retry)
 
                     completion(
                         Timeline(
-                            entries: entries.isEmpty ? [makeEntry(for: now)] : entries,
+                            entries: entries.isEmpty ? [makeEntry(for: now, settings: settings)] : entries,
                             policy: .after(retry)
                         )
                     )
@@ -80,37 +82,37 @@ struct Provider: TimelineProvider {
                 }
             }
 
-            let entries = buildEntries(from: now)
+            let entries = buildEntries(from: now, settings: settings)
 
             statsStore.incrementTimelineBuildCount()
 
             completion(
                 Timeline(
-                    entries: entries.isEmpty ? [makeEntry(for: now)] : entries,
+                    entries: entries.isEmpty ? [makeEntry(for: now, settings: settings)] : entries,
                     policy: .atEnd
                 )
             )
         }
     }
 
-    private func makeEntry(for date: Date) -> PrayerEntry {
+    private func makeEntry(for date: Date, settings: AutoPrayerSettings) -> PrayerEntry {
         PrayerEntry(
             date: date,
-            times: store.load(for: date) ?? fallback,
-            previousDayTimes: store.loadPreviousDay(for: date)
+            times: store.load(for: date, settings: settings) ?? fallback,
+            previousDayTimes: store.loadPreviousDay(for: date, settings: settings)
         )
     }
 
-    private func buildEntries(from now: Date) -> [PrayerEntry] {
+    private func buildEntries(from now: Date, settings: AutoPrayerSettings) -> [PrayerEntry] {
         var dates: [Date] = [now]
 
-        let todayTimes = store.load(for: now) ?? fallback
+        let todayTimes = store.load(for: now, settings: settings) ?? fallback
         appendPrayerMoments(for: todayTimes, base: now, threshold: now, into: &dates)
 
         if let tomorrowStart = nextMidnightRefreshDate(from: now) {
             dates.append(tomorrowStart)
 
-            let tomorrowTimes = store.load(for: tomorrowStart) ?? fallback
+            let tomorrowTimes = store.load(for: tomorrowStart, settings: settings) ?? fallback
             appendPrayerMoments(
                 for: tomorrowTimes,
                 base: tomorrowStart,
@@ -120,7 +122,7 @@ struct Provider: TimelineProvider {
         }
 
         let uniqueSortedDates = Array(Set(dates)).sorted()
-        return uniqueSortedDates.map { makeEntry(for: $0) }
+        return uniqueSortedDates.map { makeEntry(for: $0, settings: settings) }
     }
 
     private func appendPrayerMoments(

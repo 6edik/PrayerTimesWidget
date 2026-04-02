@@ -5,58 +5,35 @@ struct SharedPrayerTimesStore {
     private let key = "prayer_times_cache_v2"
     private let calendar = Calendar(identifier: .gregorian)
 
-    func loadCache() -> PrayerTimesCache {
-        guard
-            let data = defaults?.data(forKey: key),
-            let cache = try? JSONDecoder().decode(PrayerTimesCache.self, from: data)
-        else {
-            return .empty
-        }
-        return cache
-    }
-
-    func saveCache(_ cache: PrayerTimesCache) {
-        let uniqueDays = Dictionary(grouping: cache.days, by: \.isoDate)
-            .compactMap { $0.value.first }
-            .sorted { $0.isoDate < $1.isoDate }
-
-        let cleaned = PrayerTimesCache(
-            addressKey: cache.addressKey,
-            methodKey: cache.methodKey,
-            fetchedAt: cache.fetchedAt,
-            days: uniqueDays
-        )
-
-        guard let data = try? JSONEncoder().encode(cleaned) else { return }
-        defaults?.set(data, forKey: key)
+    func replaceCache(with cache: PrayerTimesCache) {
+        clear()
+        saveCache(cache)
     }
 
     func clear() {
         defaults?.removeObject(forKey: key)
     }
 
-    func load(for date: Date = Date()) -> PrayerTimes? {
-        let cache = loadCache()
+    func load(for date: Date = Date(), settings: AutoPrayerSettings) -> PrayerTimes? {
+        let cache = loadValidatedCache(settings: settings)
         let iso = isoDateString(from: date)
         return cache.days.first(where: { $0.isoDate == iso })?.times
     }
 
-    func loadPreviousDay(for date: Date) -> PrayerTimes? {
+    func loadPreviousDay(for date: Date, settings: AutoPrayerSettings) -> PrayerTimes? {
         let previous = calendar.date(byAdding: .day, value: -1, to: date) ?? date
-        return load(for: previous)
+        return load(for: previous, settings: settings)
     }
 
-    func hasData(for date: Date, settings: PrayerSettings) -> Bool {
-        let cache = loadCache()
-        guard cacheMatchesSettings(cache, settings: settings) else { return false }
-
+    func hasData(for date: Date, settings: AutoPrayerSettings) -> Bool {
+        let cache = loadValidatedCache(settings: settings)
         let iso = isoDateString(from: date)
         return cache.days.contains(where: { $0.isoDate == iso })
     }
 
-    func hasFullRange(for referenceDate: Date, settings: PrayerSettings) -> Bool {
-        let cache = loadCache()
-        guard cacheMatchesSettings(cache, settings: settings) else { return false }
+    func hasFullRange(for referenceDate: Date, settings: AutoPrayerSettings) -> Bool {
+        let cache = loadValidatedCache(settings: settings)
+        guard !cache.days.isEmpty else { return false }
 
         let availableDates = Set(cache.days.map(\.isoDate))
         let start = PrayerCachePolicy.fetchStart(from: referenceDate, calendar: calendar)
@@ -75,18 +52,18 @@ struct SharedPrayerTimesStore {
         return true
     }
 
-    func hasToday(for settings: PrayerSettings, referenceDate: Date = Date()) -> Bool {
+    func hasToday(for settings: AutoPrayerSettings, referenceDate: Date = Date()) -> Bool {
         hasData(for: referenceDate, settings: settings)
     }
 
     func needsRefresh(
-        settings: PrayerSettings,
+        settings: AutoPrayerSettings,
         referenceDate: Date = Date(),
         refreshThresholdDays: Int = 2
     ) -> Bool {
-        let cache = loadCache()
+        let cache = loadValidatedCache(settings: settings)
 
-        guard cacheMatchesSettings(cache, settings: settings) else { return true }
+        guard !cache.days.isEmpty else { return true }
         guard hasData(for: referenceDate, settings: settings) else { return true }
         guard let lastAvailable = lastAvailableDate(from: cache) else { return true }
 
@@ -98,12 +75,12 @@ struct SharedPrayerTimesStore {
     }
 
     func suggestedRefreshDate(
-        settings: PrayerSettings,
+        settings: AutoPrayerSettings,
         refreshThresholdDays: Int = 2
     ) -> Date? {
-        let cache = loadCache()
+        let cache = loadValidatedCache(settings: settings)
 
-        guard cacheMatchesSettings(cache, settings: settings) else { return Date() }
+        guard !cache.days.isEmpty else { return Date() }
         guard let lastAvailable = lastAvailableDate(from: cache) else { return Date() }
 
         let targetDay = calendar.date(
@@ -114,26 +91,29 @@ struct SharedPrayerTimesStore {
 
         return calendar.date(bySettingHour: 0, minute: 1, second: 0, of: targetDay) ?? targetDay
     }
-    
-    func cacheRangeText() -> String {
-        let cache = loadCache()
+
+    func cacheRangeText(settings: AutoPrayerSettings) -> String {
+        let cache = loadValidatedCache(settings: settings)
         guard let first = cache.firstISODate, let last = cache.lastISODate else {
             return "--"
         }
         return "\(first) – \(last)"
     }
 
-    func cacheDayCount() -> Int {
-        loadCache().days.count
+    func cacheDayCount(settings: AutoPrayerSettings) -> Int {
+        loadValidatedCache(settings: settings).days.count
     }
 
-    func cacheFetchedAt() -> Date? {
-        let cache = loadCache()
+    func cacheFetchedAt(settings: AutoPrayerSettings) -> Date? {
+        let cache = loadValidatedCache(settings: settings)
         return cache.days.isEmpty ? nil : cache.fetchedAt
     }
 
-    func remainingCoverageDays(from referenceDate: Date = Date()) -> Int? {
-        let cache = loadCache()
+    func remainingCoverageDays(
+        from referenceDate: Date = Date(),
+        settings: AutoPrayerSettings
+    ) -> Int? {
+        let cache = loadValidatedCache(settings: settings)
         guard let lastAvailable = lastAvailableDate(from: cache) else { return nil }
 
         let start = calendar.startOfDay(for: referenceDate)
@@ -141,9 +121,45 @@ struct SharedPrayerTimesStore {
         return calendar.dateComponents([.day], from: start, to: end).day
     }
 
-    private func cacheMatchesSettings(_ cache: PrayerTimesCache, settings: PrayerSettings) -> Bool {
-        cache.addressKey == normalizedAddress(settings.address)
-        && cache.methodKey == String(describing: settings.method)
+    private func loadRawCache() -> PrayerTimesCache {
+        guard
+            let data = defaults?.data(forKey: key),
+            let cache = try? JSONDecoder().decode(PrayerTimesCache.self, from: data)
+        else {
+            return .empty
+        }
+
+        return cache
+    }
+
+    private func saveCache(_ cache: PrayerTimesCache) {
+        let uniqueDays = Dictionary(grouping: cache.days, by: \.isoDate)
+            .compactMap { $0.value.first }
+            .sorted { $0.isoDate < $1.isoDate }
+
+        let cleaned = PrayerTimesCache(
+            addressKey: cache.addressKey,
+            methodKey: cache.methodKey,
+            fetchedAt: cache.fetchedAt,
+            days: uniqueDays
+        )
+
+        guard let data = try? JSONEncoder().encode(cleaned) else { return }
+        defaults?.set(data, forKey: key)
+    }
+
+    private func loadValidatedCache(settings: AutoPrayerSettings) -> PrayerTimesCache {
+        let cache = loadRawCache()
+        guard cacheMatchesSettings(cache, settings: settings) else {
+            return .empty
+        }
+        return cache
+    }
+
+    private func cacheMatchesSettings(_ cache: PrayerTimesCache, settings: AutoPrayerSettings) -> Bool {
+        let prayerSettings = settings.asPrayerSettings(for: Date())
+        return cache.addressKey == normalizedAddress(prayerSettings.address)
+            && cache.methodKey == String(describing: prayerSettings.method)
     }
 
     private func lastAvailableDate(from cache: PrayerTimesCache) -> Date? {

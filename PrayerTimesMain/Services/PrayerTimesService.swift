@@ -41,10 +41,113 @@ struct PrayerTimesService {
         return today
     }
 
+    nonisolated func fetchPrayerTimesUncached(settings: PrayerSettings) async throws -> PrayerTimes {
+        let fetchStart = PrayerCachePolicy.fetchStart(from: settings.date)
+
+        let cache = try await fetchPrayerTimesCacheUncached(
+            settings: settings,
+            referenceDate: fetchStart,
+            coverageDays: PrayerCachePolicy.totalDays
+        )
+
+        let requestedISO = isoDateString(from: settings.date)
+
+        guard let today = cache.days.first(where: { $0.isoDate == requestedISO })?.times else {
+            throw PrayerTimesServiceError.missingRequestedDay
+        }
+
+        return today
+    }
+    
+    nonisolated func fetchPrayerTimesForSingleDayUncached(settings: PrayerSettings) async throws -> PrayerTimes {
+        let baseURL = "https://api.aladhan.com/v1"
+        let datePath = apiDateString(from: settings.date)
+
+        guard var components = URLComponents(string: "\(baseURL)/timingsByAddress/\(datePath)") else {
+            throw PrayerTimesServiceError.invalidURL
+        }
+
+        components.queryItems = [
+            URLQueryItem(name: "address", value: settings.address),
+            URLQueryItem(name: "method", value: settings.method.apiValue)
+        ]
+
+        guard let url = components.url else {
+            throw PrayerTimesServiceError.invalidURL
+        }
+
+        var request = URLRequest(url: url)
+        request.cachePolicy = .reloadIgnoringLocalCacheData
+
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.requestCachePolicy = .reloadIgnoringLocalCacheData
+        configuration.urlCache = nil
+
+        let session = URLSession(configuration: configuration)
+        let (data, response) = try await session.data(for: request)
+
+        guard let http = response as? HTTPURLResponse, 200..<300 ~= http.statusCode else {
+            throw PrayerTimesServiceError.invalidResponse
+        }
+
+        let decoded = try JSONDecoder().decode(PrayerTimesResponse.self, from: data)
+        let item = decoded.data
+
+        return PrayerTimes(
+            fajr: cleanTime(item.timings.fajr),
+            shuruk: cleanTime(item.timings.sunrise),
+            dhuhr: cleanTime(item.timings.dhuhr),
+            asr: cleanTime(item.timings.asr),
+            maghrib: cleanTime(item.timings.maghrib),
+            isha: cleanTime(item.timings.isha),
+            readableDate: item.date.readable,
+            readableDay: item.date.gregorian.weekday.en,
+            hijriDate: item.date.hijri.date,
+            hijriDay: item.date.hijri.weekday.ar ?? item.date.hijri.weekday.en,
+            timezone: item.meta.timezone
+        )
+    }
+    
+    nonisolated private func apiDateString(from date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.calendar = Calendar(identifier: .gregorian)
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = .current
+        formatter.dateFormat = "dd-MM-yyyy"
+        return formatter.string(from: date)
+    }
+
     nonisolated func fetchPrayerTimesCache(
         settings: PrayerSettings,
         referenceDate: Date = Date(),
         coverageDays: Int = PrayerCachePolicy.totalDays
+    ) async throws -> PrayerTimesCache {
+        try await fetchPrayerTimesCache(
+            settings: settings,
+            referenceDate: referenceDate,
+            coverageDays: coverageDays,
+            uncached: false
+        )
+    }
+
+    nonisolated func fetchPrayerTimesCacheUncached(
+        settings: PrayerSettings,
+        referenceDate: Date = Date(),
+        coverageDays: Int = PrayerCachePolicy.totalDays
+    ) async throws -> PrayerTimesCache {
+        try await fetchPrayerTimesCache(
+            settings: settings,
+            referenceDate: referenceDate,
+            coverageDays: coverageDays,
+            uncached: true
+        )
+    }
+
+    nonisolated private func fetchPrayerTimesCache(
+        settings: PrayerSettings,
+        referenceDate: Date,
+        coverageDays: Int,
+        uncached: Bool
     ) async throws -> PrayerTimesCache {
         let calendar = Calendar(identifier: .gregorian)
         let start = calendar.startOfDay(for: referenceDate)
@@ -58,7 +161,8 @@ struct PrayerTimesService {
             let monthDays = try await fetchCalendarMonth(
                 year: month.year,
                 month: month.month,
-                settings: settings
+                settings: settings,
+                uncached: uncached
             )
             allDays.append(contentsOf: monthDays)
         }
@@ -85,7 +189,8 @@ struct PrayerTimesService {
     nonisolated private func fetchCalendarMonth(
         year: Int,
         month: Int,
-        settings: PrayerSettings
+        settings: PrayerSettings,
+        uncached: Bool
     ) async throws -> [PrayerDay] {
         let baseURL = "https://api.aladhan.com/v1"
 
@@ -95,33 +200,80 @@ struct PrayerTimesService {
 
         components.queryItems = [
             URLQueryItem(name: "address", value: settings.address),
-            URLQueryItem(name: "method", value: String(describing: settings.method))
+            URLQueryItem(name: "method", value: settings.method.apiValue)
         ]
 
         guard let url = components.url else {
             throw PrayerTimesServiceError.invalidURL
         }
 
-        let (data, response) = try await URLSession.shared.data(from: url)
+        var request = URLRequest(url: url)
+        request.cachePolicy = uncached ? .reloadIgnoringLocalCacheData : .useProtocolCachePolicy
+
+        let session: URLSession
+        if uncached {
+            let configuration = URLSessionConfiguration.ephemeral
+            configuration.requestCachePolicy = .reloadIgnoringLocalCacheData
+            configuration.urlCache = nil
+            session = URLSession(configuration: configuration)
+        } else {
+            session = URLSession.shared
+        }
+
+        let (data, response) = try await session.data(for: request)
 
         guard let http = response as? HTTPURLResponse, 200..<300 ~= http.statusCode else {
             throw PrayerTimesServiceError.invalidResponse
         }
 
-        let decoded = try JSONDecoder().decode(CalendarResponse.self, from: data)
+        let decoded: PrayerCalendarResponse
+
+        do {
+            decoded = try JSONDecoder().decode(PrayerCalendarResponse.self, from: data)
+        } catch let error as DecodingError {
+            switch error {
+            case .typeMismatch(let type, let context):
+                print("TYPE MISMATCH:", type)
+                print("PATH:", context.codingPath.map(\.stringValue).joined(separator: "."))
+                print("DEBUG:", context.debugDescription)
+
+            case .valueNotFound(let type, let context):
+                print("VALUE NOT FOUND:", type)
+                print("PATH:", context.codingPath.map(\.stringValue).joined(separator: "."))
+                print("DEBUG:", context.debugDescription)
+
+            case .keyNotFound(let key, let context):
+                print("KEY NOT FOUND:", key.stringValue)
+                print("PATH:", context.codingPath.map(\.stringValue).joined(separator: "."))
+                print("DEBUG:", context.debugDescription)
+
+            case .dataCorrupted(let context):
+                print("DATA CORRUPTED")
+                print("PATH:", context.codingPath.map(\.stringValue).joined(separator: "."))
+                print("DEBUG:", context.debugDescription)
+
+            @unknown default:
+                print("UNKNOWN DECODING ERROR:", error)
+            }
+
+            throw error
+        } catch {
+            print("OTHER DECODE ERROR:", error)
+            throw error
+        }
 
         return decoded.data.map { item in
             PrayerDay(
                 isoDate: gregorianAPIToISO(item.date.gregorian.date),
                 times: PrayerTimes(
-                    fajr: cleanTime(item.timings.Fajr),
-                    shuruk: cleanTime(item.timings.Sunrise),
-                    dhuhr: cleanTime(item.timings.Dhuhr),
-                    asr: cleanTime(item.timings.Asr),
-                    maghrib: cleanTime(item.timings.Maghrib),
-                    isha: cleanTime(item.timings.Isha),
+                    fajr: cleanTime(item.timings.fajr),
+                    shuruk: cleanTime(item.timings.sunrise),
+                    dhuhr: cleanTime(item.timings.dhuhr),
+                    asr: cleanTime(item.timings.asr),
+                    maghrib: cleanTime(item.timings.maghrib),
+                    isha: cleanTime(item.timings.isha),
                     readableDate: item.date.readable,
-                    readableDay: item.date.gregorian.weekday.ar ?? item.date.gregorian.weekday.en,
+                    readableDay: item.date.gregorian.weekday.en,
                     hijriDate: item.date.hijri.date,
                     hijriDay: item.date.hijri.weekday.ar ?? item.date.hijri.weekday.en,
                     timezone: item.meta.timezone
@@ -187,53 +339,4 @@ struct PrayerTimesService {
             .trimmingCharacters(in: .whitespacesAndNewlines)
             .lowercased()
     }
-}
-
-nonisolated private struct CalendarResponse: Decodable {
-    let data: [CalendarDayResponse]
-}
-
-nonisolated private struct CalendarDayResponse: Decodable {
-    let timings: TimingsResponse
-    let date: DayDateResponse
-    let meta: MetaResponse
-}
-
-nonisolated private struct TimingsResponse: Decodable {
-    let Fajr: String
-    let Sunrise: String
-    let Dhuhr: String
-    let Asr: String
-    let Maghrib: String
-    let Isha: String
-}
-
-nonisolated private struct DayDateResponse: Decodable {
-    let readable: String
-    let gregorian: GregorianResponse
-    let hijri: HijriResponse
-}
-
-nonisolated private struct GregorianResponse: Decodable {
-    let date: String
-    let weekday: GregorianWeekdayResponse
-}
-
-nonisolated private struct GregorianWeekdayResponse: Decodable {
-    let en: String
-    let ar: String?
-}
-
-nonisolated private struct HijriResponse: Decodable {
-    let date: String
-    let weekday: HijriWeekdayResponse
-}
-
-nonisolated private struct HijriWeekdayResponse: Decodable {
-    let en: String
-    let ar: String?
-}
-
-nonisolated private struct MetaResponse: Decodable {
-    let timezone: String
 }

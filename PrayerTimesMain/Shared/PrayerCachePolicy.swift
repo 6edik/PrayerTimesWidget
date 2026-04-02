@@ -2,8 +2,8 @@ import Foundation
 
 enum PrayerCachePolicy {
     nonisolated static let pastDays = 1
-    nonisolated static let futureDays = 7
-    nonisolated static let totalDays = pastDays + 1 + futureDays   // 9
+    nonisolated static let futureDays = 30
+    nonisolated static let totalDays = pastDays + 1 + futureDays   // 32
 
     nonisolated static func fetchStart(
         from now: Date,

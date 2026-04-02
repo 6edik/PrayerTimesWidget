@@ -1,7 +1,7 @@
 import SwiftUI
 import WidgetKit
 
-struct ContentView: View {
+struct PrayerTimesHomeView: View {
     @Environment(\.scenePhase) private var scenePhase
 
     private let service = PrayerTimesService()
@@ -33,11 +33,13 @@ struct ContentView: View {
     enum ActiveSheet: Identifiable {
         case settings
         case statistics
+        case manualQuery
 
         var id: Int {
             switch self {
             case .settings: return 1
             case .statistics: return 2
+            case .manualQuery: return 3
             }
         }
     }
@@ -45,9 +47,12 @@ struct ContentView: View {
     var body: some View {
         NavigationStack {
             VStack(spacing: 14) {
-                Text("Gebetszeiten")
-                    .font(.system(size: 34, weight: .ultraLight, design: .serif))
-                    .frame(height: 30)
+                VStack(spacing: 3) {
+                    Text("Gebetszeiten")
+                }
+                .foregroundStyle(Color.orange.opacity(0.95))
+                .font(.system(size: 34, weight: .ultraLight, design: .serif))
+                .frame(height: 30)
 
                 HStack(spacing: 8) {
                     Text(prayerTimes.readableDate)
@@ -56,21 +61,24 @@ struct ContentView: View {
                 }
                 .font(.subheadline)
 
-                HStack(spacing: 8){
+                HStack(spacing: 8) {
                     if prayerTimes.readableDay != "--" {
                         Text(prayerTimes.readableDay)
                             .font(.subheadline)
                             .foregroundStyle(.secondary)
                     }
+
                     Text("•")
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
+
                     if prayerTimes.hijriDay != "--" {
                         Text(prayerTimes.hijriDay)
                             .font(.subheadline)
                             .foregroundStyle(.secondary)
                     }
                 }
+
                 Text(prayerTimes.timezone)
                     .foregroundStyle(.secondary)
 
@@ -112,13 +120,19 @@ struct ContentView: View {
                 .buttonStyle(.borderedProminent)
             }
             .padding()
+            .navigationTitle("")
+            .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItemGroup(placement: .topBarTrailing) {
-                    Button("Stats") {
+                    TopBarActionButton(systemImage: "magnifyingglass", accessibilityLabel: "Manuelle Suche") {
+                        activeSheet = .manualQuery
+                    }
+
+                    TopBarActionButton(systemImage: "chart.bar", accessibilityLabel: "Statistiken") {
                         activeSheet = .statistics
                     }
 
-                    Button("Settings") {
+                    TopBarActionButton(systemImage: "gearshape", accessibilityLabel: "Einstellungen") {
                         activeSheet = .settings
                     }
                 }
@@ -134,6 +148,9 @@ struct ContentView: View {
 
                 case .statistics:
                     StatisticsView()
+
+                case .manualQuery:
+                    ManualQueryView()
                 }
             }
         }
@@ -156,23 +173,25 @@ struct ContentView: View {
         source: RefreshSource,
         forceNetwork: Bool = false
     ) async {
-        let settings = settingsStore.load()
-        currentAddress = settings.address
-        currentMethod = PrayerCalculationMethod(rawValue: settings.method)?.title ?? "Unbekannt"
+        let autoSettings = settingsStore.loadAutoSettings()
+        let settings = settingsStore.loadPrayerSettings(for: Date())
 
-        if let cachedToday = store.load(for: Date()) {
+        currentAddress = autoSettings.address
+        currentMethod = autoSettings.method.title
+
+        if let cachedToday = store.load(for: Date(), settings: autoSettings) {
             prayerTimes = cachedToday
         }
 
         let shouldFetch =
             forceNetwork ||
-            !store.hasToday(for: settings, referenceDate: Date()) ||
-            store.needsRefresh(settings: settings, referenceDate: Date(), refreshThresholdDays: 2)
+            !store.hasToday(for: autoSettings, referenceDate: Date()) ||
+            store.needsRefresh(settings: autoSettings, referenceDate: Date(), refreshThresholdDays: 2)
 
         guard shouldFetch else {
             errorMessage = nil
             statsStore.setNextPlannedRefresh(
-                store.suggestedRefreshDate(settings: settings, refreshThresholdDays: 2)
+                store.suggestedRefreshDate(settings: autoSettings, refreshThresholdDays: 2)
             )
             return
         }
@@ -182,15 +201,17 @@ struct ContentView: View {
         statsStore.markAttempt(source: source)
 
         do {
+            let fetchStart = PrayerCachePolicy.fetchStart(from: settings.date)
+
             let cache = try await service.fetchPrayerTimesCache(
                 settings: settings,
-                referenceDate: Date(),
-                coverageDays: 7
+                referenceDate: fetchStart,
+                coverageDays: PrayerCachePolicy.totalDays
             )
 
-            store.saveCache(cache)
+            store.replaceCache(with: cache)
 
-            if let today = store.load(for: Date()) {
+            if let today = store.load(for: Date(), settings: autoSettings) {
                 prayerTimes = today
             }
 
@@ -198,18 +219,18 @@ struct ContentView: View {
             statsStore.markSuccess(source: source)
             statsStore.incrementWidgetReloadCount()
             statsStore.setNextPlannedRefresh(
-                store.suggestedRefreshDate(settings: settings, refreshThresholdDays: 2)
+                store.suggestedRefreshDate(settings: autoSettings, refreshThresholdDays: 2)
             )
 
             WidgetCenter.shared.reloadTimelines(ofKind: AppGroup.widgetKind)
         } catch {
-            if let cachedToday = store.load(for: Date()) {
+            print("LOAD ERROR:", error)
+
+            if let cachedToday = store.load(for: Date(), settings: autoSettings) {
                 prayerTimes = cachedToday
-                errorMessage = "Keine Verbindung – lokale Daten werden verwendet."
-            } else {
-                errorMessage = "API konnte nicht geladen werden."
             }
 
+            errorMessage = error.localizedDescription
             statsStore.markFailure(source: source, error: error.localizedDescription)
         }
 
@@ -219,8 +240,4 @@ struct ContentView: View {
     private func saveLastRefreshDate() {
         UserDefaults(suiteName: AppGroup.id)?.set(Date(), forKey: "last_refresh")
     }
-}
-
-#Preview {
-    ContentView()
 }

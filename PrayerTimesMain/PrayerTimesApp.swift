@@ -16,7 +16,7 @@ struct PrayerTimesApp: App {
 
     var body: some Scene {
         WindowGroup {
-            ContentView()
+            RootView()
                 .fontDesign(.serif)
                 .task {
                     Self.scheduleAppRefresh()
@@ -32,7 +32,7 @@ struct PrayerTimesApp: App {
     nonisolated private static func scheduleAppRefresh() {
         Task {
             let preferred = await MainActor.run {
-                let settings = SharedPrayerSettingsStore().load()
+                let settings = SharedPrayerSettingsStore().loadAutoSettings()
                 let store = SharedPrayerTimesStore()
 
                 return store.suggestedRefreshDate(
@@ -68,18 +68,19 @@ struct PrayerTimesApp: App {
             Task {
                 let service = PrayerTimesService()
 
-                let (store, statsStore, settings) = await MainActor.run {
+                let (store, statsStore, autoSettings, prayerSettings) = await MainActor.run {
                     let store = SharedPrayerTimesStore()
                     let settingsStore = SharedPrayerSettingsStore()
                     let statsStore = RefreshStatsStore()
-                    let settings = settingsStore.load()
-                    return (store, statsStore, settings)
+                    let autoSettings = settingsStore.loadAutoSettings()
+                    let prayerSettings = settingsStore.loadPrayerSettings(for: Date())
+                    return (store, statsStore, autoSettings, prayerSettings)
                 }
 
                 let shouldFetch = await MainActor.run {
-                    !store.hasToday(for: settings, referenceDate: Date()) ||
+                    !store.hasToday(for: autoSettings, referenceDate: Date()) ||
                     store.needsRefresh(
-                        settings: settings,
+                        settings: autoSettings,
                         referenceDate: Date(),
                         refreshThresholdDays: 2
                     )
@@ -89,7 +90,7 @@ struct PrayerTimesApp: App {
                     await MainActor.run {
                         statsStore.setNextPlannedRefresh(
                             store.suggestedRefreshDate(
-                                settings: settings,
+                                settings: autoSettings,
                                 refreshThresholdDays: 2
                             )
                         )
@@ -103,24 +104,23 @@ struct PrayerTimesApp: App {
                 }
 
                 do {
-                    let now = Date()
-                    let fetchStart = Calendar.current.date(byAdding: .day, value: -1, to: now) ?? now
+                    let fetchStart = PrayerCachePolicy.fetchStart(from: prayerSettings.date)
 
                     let cache = try await service.fetchPrayerTimesCache(
-                        settings: settings,
+                        settings: prayerSettings,
                         referenceDate: fetchStart,
-                        coverageDays: 8
+                        coverageDays: PrayerCachePolicy.totalDays
                     )
 
                     await MainActor.run {
-                        store.saveCache(cache)
+                        store.replaceCache(with: cache)
                         UserDefaults(suiteName: AppGroup.id)?.set(Date(), forKey: "last_refresh")
 
                         statsStore.markSuccess(source: .backgroundTask)
                         statsStore.incrementWidgetReloadCount()
                         statsStore.setNextPlannedRefresh(
                             store.suggestedRefreshDate(
-                                settings: settings,
+                                settings: autoSettings,
                                 refreshThresholdDays: 2
                             )
                         )
@@ -153,7 +153,6 @@ struct PrayerTimesApp: App {
 
         queue.addOperation(operation)
     }
-
     nonisolated private static func normalizedEarliestDate(_ preferred: Date?) -> Date {
         let minimum = Date().addingTimeInterval(15 * 60)
         guard let preferred else { return minimum }

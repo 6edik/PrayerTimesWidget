@@ -9,7 +9,12 @@ struct StatisticsView: View {
     @State private var settings = PrayerSettings(
         address: "--",
         date: Date(),
-        method: PrayerCalculationMethod.diyanet.rawValue
+        method: PrayerCalculationMethod.ditib
+    )
+
+    @State private var autoSettings = AutoPrayerSettings(
+        address: "--",
+        method: .ditib
     )
 
     @State private var cacheRange = "--"
@@ -54,10 +59,7 @@ struct StatisticsView: View {
                 Section("Aktuelle Einstellungen") {
                     statRow("Ort", settings.address)
                     statRow("Datum", formatted(settings.date))
-                    statRow(
-                        "Methode",
-                        PrayerCalculationMethod(rawValue: settings.method)?.title ?? "Unbekannt"
-                    )
+                    statRow("Methode", settings.method.title)
                 }
 
                 Section("Hinweis") {
@@ -116,13 +118,19 @@ struct StatisticsView: View {
     }
 
     private func reload() {
-        stats = statsStore.load()
-        settings = settingsStore.load()
+        let latestAutoSettings = settingsStore.loadAutoSettings()
 
-        cacheRange = prayerStore.cacheRangeText()
-        cacheDayCount = prayerStore.cacheDayCount()
-        cacheFetchedAt = prayerStore.cacheFetchedAt()
-        remainingCoverageDays = prayerStore.remainingCoverageDays()
+        stats = statsStore.load()
+        autoSettings = latestAutoSettings
+        settings = latestAutoSettings.asPrayerSettings(for: Date())
+
+        cacheRange = prayerStore.cacheRangeText(settings: latestAutoSettings)
+        cacheDayCount = prayerStore.cacheDayCount(settings: latestAutoSettings)
+        cacheFetchedAt = prayerStore.cacheFetchedAt(settings: latestAutoSettings)
+        remainingCoverageDays = prayerStore.remainingCoverageDays(
+            from: Date(),
+            settings: latestAutoSettings
+        )
     }
 }
 

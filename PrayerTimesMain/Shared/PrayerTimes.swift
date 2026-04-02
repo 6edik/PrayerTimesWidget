@@ -1,6 +1,6 @@
 import Foundation
 
-struct PrayerTimes: Codable {
+struct PrayerTimes: Codable, Equatable {
     let fajr: String
     let shuruk: String
     let dhuhr: String

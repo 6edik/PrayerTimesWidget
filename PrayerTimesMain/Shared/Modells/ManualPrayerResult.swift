@@ -1,7 +1,8 @@
 import Foundation
 
-struct PrayerSettings: Codable {
+struct ManualPrayerResult: Equatable {
     let address: String
-    let date: Date
     let method: PrayerCalculationMethod
+    let date: Date
+    let times: PrayerTimes
 }
