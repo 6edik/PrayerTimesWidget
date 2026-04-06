@@ -27,6 +27,11 @@ final class ManualPrayerViewModel: ObservableObject {
         self.query = ManualPrayerQuery(seed: resolvedSettingsStore.loadAutoSettings())
     }
 
+    func runQuery(address: String) async {
+        query.address = address.trimmingCharacters(in: .whitespacesAndNewlines)
+        await runQuery()
+    }
+
     func runQuery() async {
         let trimmedAddress = query.address.trimmingCharacters(in: .whitespacesAndNewlines)
 
@@ -41,12 +46,7 @@ final class ManualPrayerViewModel: ObservableObject {
 
         let autoSettings = settingsStore.loadAutoSettings()
 
-        let sameAddress =
-            trimmedAddress.lowercased()
-            == autoSettings.address
-                .trimmingCharacters(in: .whitespacesAndNewlines)
-                .lowercased()
-
+        let sameAddress = normalizedAddress(trimmedAddress) == normalizedAddress(autoSettings.address)
         let sameMethod = query.method == autoSettings.method
 
         if sameAddress,
@@ -88,5 +88,16 @@ final class ManualPrayerViewModel: ObservableObject {
         query = ManualPrayerQuery(seed: settingsStore.loadAutoSettings())
         result = nil
         errorMessage = nil
+    }
+
+    private func normalizedAddress(_ value: String) -> String {
+        let collapsedWhitespace = value
+            .components(separatedBy: .whitespacesAndNewlines)
+            .filter { !$0.isEmpty }
+            .joined(separator: " ")
+
+        return collapsedWhitespace
+            .folding(options: [.caseInsensitive, .diacriticInsensitive], locale: Locale(identifier: "en_US_POSIX"))
+            .trimmingCharacters(in: .whitespacesAndNewlines)
     }
 }

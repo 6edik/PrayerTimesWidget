@@ -18,7 +18,7 @@ struct Provider: TimelineProvider {
         readableDay: "--",
         hijriDate: "--",
         hijriDay: "--",
-        timezone: "--"
+        timezone: "--",
     )
 
     func placeholder(in context: Context) -> PrayerEntry {

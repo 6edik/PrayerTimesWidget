@@ -106,8 +106,11 @@ enum FlexibleValue: Decodable {
 }
 
 nonisolated struct PrayerMethodLocation: Decodable {
-    let latitude: Double
-    let longitude: Double
+        let latitude: Double?
+        let longitude: Double?
+        let formatted: String?
+        let city: String?
+        let country: String?
 }
 
 nonisolated struct PrayerOffset: Decodable {

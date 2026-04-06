@@ -92,7 +92,7 @@ struct PrayerTimesService {
 
         let decoded = try JSONDecoder().decode(PrayerTimesResponse.self, from: data)
         let item = decoded.data
-
+        
         return PrayerTimes(
             fajr: cleanTime(item.timings.fajr),
             shuruk: cleanTime(item.timings.sunrise),
@@ -104,7 +104,7 @@ struct PrayerTimesService {
             readableDay: item.date.gregorian.weekday.en,
             hijriDate: item.date.hijri.date,
             hijriDay: item.date.hijri.weekday.ar ?? item.date.hijri.weekday.en,
-            timezone: item.meta.timezone
+            timezone: item.meta.timezone,
         )
     }
     
@@ -262,23 +262,32 @@ struct PrayerTimesService {
             throw error
         }
 
-        return decoded.data.map { item in
-            PrayerDay(
-                isoDate: gregorianAPIToISO(item.date.gregorian.date),
-                times: PrayerTimes(
-                    fajr: cleanTime(item.timings.fajr),
-                    shuruk: cleanTime(item.timings.sunrise),
-                    dhuhr: cleanTime(item.timings.dhuhr),
-                    asr: cleanTime(item.timings.asr),
-                    maghrib: cleanTime(item.timings.maghrib),
-                    isha: cleanTime(item.timings.isha),
-                    readableDate: item.date.readable,
-                    readableDay: item.date.gregorian.weekday.en,
-                    hijriDate: item.date.hijri.date,
-                    hijriDay: item.date.hijri.weekday.ar ?? item.date.hijri.weekday.en,
-                    timezone: item.meta.timezone
-                )
-            )
+        return await withTaskGroup(of: PrayerDay.self) { group in
+            for item in decoded.data {
+                group.addTask {
+                    
+                    return PrayerDay(
+                        isoDate: self.gregorianAPIToISO(item.date.gregorian.date),
+                        times: PrayerTimes(
+                            fajr: self.cleanTime(item.timings.fajr),
+                            shuruk: self.cleanTime(item.timings.sunrise),
+                            dhuhr: self.cleanTime(item.timings.dhuhr),
+                            asr: self.cleanTime(item.timings.asr),
+                            maghrib: self.cleanTime(item.timings.maghrib),
+                            isha: self.cleanTime(item.timings.isha),
+                            readableDate: item.date.readable,
+                            readableDay: item.date.gregorian.weekday.en,
+                            hijriDate: item.date.hijri.date,
+                            hijriDay: item.date.hijri.weekday.ar ?? item.date.hijri.weekday.en,
+                            timezone: item.meta.timezone,
+                        )
+                    )
+                }
+            }
+            
+            return await group.reduce(into: [PrayerDay]()) { result, day in
+                result.append(day)
+            }
         }
     }
 

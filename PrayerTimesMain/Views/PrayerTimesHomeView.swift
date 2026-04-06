@@ -20,7 +20,7 @@ struct PrayerTimesHomeView: View {
         readableDay: "--",
         hijriDate: "--",
         hijriDay: "--",
-        timezone: "--"
+        timezone: "--",
     )
 
     @State private var currentAddress = "--"
@@ -46,13 +46,8 @@ struct PrayerTimesHomeView: View {
 
     var body: some View {
         NavigationStack {
-            VStack(spacing: 14) {
-                VStack(spacing: 3) {
-                    Text("Gebetszeiten")
-                }
-                .foregroundStyle(Color.orange.opacity(0.95))
-                .font(.system(size: 34, weight: .ultraLight, design: .serif))
-                .frame(height: 30)
+            AppPageContainer {
+                AppPageHeader(title: "Gebetszeiten")
 
                 HStack(spacing: 8) {
                     Text(prayerTimes.readableDate)
@@ -119,9 +114,6 @@ struct PrayerTimesHomeView: View {
                 }
                 .buttonStyle(.borderedProminent)
             }
-            .padding()
-            .navigationTitle("")
-            .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItemGroup(placement: .topBarTrailing) {
                     TopBarActionButton(systemImage: "magnifyingglass", accessibilityLabel: "Manuelle Suche") {
@@ -145,10 +137,8 @@ struct PrayerTimesHomeView: View {
                             await loadPrayerTimes(source: .manual, forceNetwork: true)
                         }
                     }
-
                 case .statistics:
                     StatisticsView()
-
                 case .manualQuery:
                     ManualQueryView()
                 }

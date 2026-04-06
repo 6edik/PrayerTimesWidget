@@ -7,6 +7,8 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		A36BBD9D2F842D0A00EA56FC /* DE_cities.json in Resources */ = {isa = PBXBuildFile; fileRef = A36BBD9C2F842D0A00EA56FC /* DE_cities.json */; };
+		A36BBD9E2F842D0A00EA56FC /* DE_cities.json in Resources */ = {isa = PBXBuildFile; fileRef = A36BBD9C2F842D0A00EA56FC /* DE_cities.json */; };
 		A3700E1F2F61A949004CB90A /* WidgetKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = A339B8532F6065A800CE024F /* WidgetKit.framework */; };
 		A3700E202F61A949004CB90A /* SwiftUI.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = A339B8552F6065A800CE024F /* SwiftUI.framework */; };
 		A3700E312F61A94A004CB90A /* PrayerTimesWidgetExtension.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = A3700E1E2F61A949004CB90A /* PrayerTimesWidgetExtension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
@@ -40,6 +42,7 @@
 		A339B8532F6065A800CE024F /* WidgetKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = WidgetKit.framework; path = System/Library/Frameworks/WidgetKit.framework; sourceTree = SDKROOT; };
 		A339B8552F6065A800CE024F /* SwiftUI.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = SwiftUI.framework; path = System/Library/Frameworks/SwiftUI.framework; sourceTree = SDKROOT; };
 		A34DD12C2F5F104800172E56 /* PrayerTimesMain.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = PrayerTimesMain.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		A36BBD9C2F842D0A00EA56FC /* DE_cities.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = DE_cities.json; sourceTree = "<group>"; };
 		A3700E1E2F61A949004CB90A /* PrayerTimesWidgetExtension.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = PrayerTimesWidgetExtension.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		A3700EC82F61D18F004CB90A /* PrayerTimesWidgetExtension.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = PrayerTimesWidgetExtension.entitlements; sourceTree = "<group>"; };
 /* End PBXFileReference section */
@@ -48,6 +51,15 @@
 		A3700E612F61ACF8004CB90A /* Exceptions for "PrayerTimesMain" folder in "PrayerTimesWidgetExtension" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
+				CityPicker/CityInputMode.swift,
+				CityPicker/CityItem.swift,
+				CityPicker/CityLoader.swift,
+				CityPicker/CityPickerView.swift,
+				CityPicker/CityPickerViewModel.swift,
+				CountryPicker/CalledCityResolver.swift,
+				CountryPicker/CountryModell.swift,
+				CountryPicker/CountryPickerView.swift,
+				CountryPicker/PrayerLocationPickerViewModel.swift,
 				Models/AlAdhanModels.swift,
 				Models/PrayerTimesCache.swift,
 				Services/PrayerTimesService.swift,
@@ -140,6 +152,7 @@
 				A3700E3D2F61AA42004CB90A /* PrayerTimesWidget */,
 				A339B8522F6065A800CE024F /* Frameworks */,
 				A34DD12D2F5F104800172E56 /* Products */,
+				A36BBD9C2F842D0A00EA56FC /* DE_cities.json */,
 			);
 			sourceTree = "<group>";
 		};
@@ -244,6 +257,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				A36BBD9D2F842D0A00EA56FC /* DE_cities.json in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -251,6 +265,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				A36BBD9E2F842D0A00EA56FC /* DE_cities.json in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -414,6 +429,7 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = PrayerTimesMain/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = "Authentic PT";
+				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "Der Standort wird benötigt, um die Gebetsrichtung zu bestimmen.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -449,6 +465,7 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = PrayerTimesMain/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = "Authentic PT";
+				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "Der Standort wird benötigt, um die Gebetsrichtung zu bestimmen.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
