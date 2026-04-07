@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct StatisticsView: View {
+    @Environment(\.dismiss) private var dismiss
     private let statsStore = RefreshStatsStore()
     private let settingsStore = SharedPrayerSettingsStore()
     private let prayerStore = SharedPrayerTimesStore()
@@ -24,6 +25,14 @@ struct StatisticsView: View {
 
     var body: some View {
         NavigationStack {
+            VStack {
+                Text("Statistik")
+            }
+            .navigationBarTitleDisplayMode(.inline)
+            .foregroundStyle(Color.orange.opacity(0.95))
+            .font(.system(size: 34, weight: .ultraLight, design: .serif))
+            .frame(height: 30)
+            
             Form {
                 Section("Aktualisierung") {
                     statRow("Letzter Versuch", formatted(stats.lastAttemptAt))
@@ -33,14 +42,14 @@ struct StatisticsView: View {
                     statRow("Letzte Quelle", stats.lastSource ?? "--")
                     statRow("Letzter Fehlertext", stats.lastError ?? "--")
                 }
-
+                
                 Section("Cache") {
                     statRow("Zeitraum", cacheRange)
                     statRow("Gespeicherte Tage", "\(cacheDayCount)")
                     statRow("Letzter Cache-Fetch", formatted(cacheFetchedAt))
                     statRow("Resttage ab heute", remainingCoverageText())
                 }
-
+                
                 Section("Quellen-Zähler") {
                     statRow("Appstart", "\(stats.appStartRefreshCount)")
                     statRow("Manuell", "\(stats.manualRefreshCount)")
@@ -48,31 +57,36 @@ struct StatisticsView: View {
                     statRow("App Active", "\(stats.appActiveRefreshCount)")
                     statRow("Widget Timeline", "\(stats.widgetTimelineRefreshCount)")
                 }
-
+                
                 Section("Gesamtzähler") {
                     statRow("Erfolgreiche Abrufe", "\(stats.successfulFetchCount)")
                     statRow("Fehlgeschlagene Abrufe", "\(stats.failedFetchCount)")
                     statRow("Widget Reloads", "\(stats.widgetReloadCount)")
                     statRow("Timeline Builds", "\(stats.timelineBuildCount)")
                 }
-
+                
                 Section("Aktuelle Einstellungen") {
                     statRow("Ort", settings.address)
                     statRow("Datum", formatted(settings.date))
                     statRow("Methode", settings.method.title)
                 }
-
+                
                 Section("Hinweis") {
                     Text("Sobald nur noch 2 Tage Abdeckung übrig sind, sollte die App den Wochen-Cache erneut laden.")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                 }
             }
-            .navigationTitle("Statistik")
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button("Aktualisieren") {
                         reload()
+                    }
+                }
+                
+                ToolbarItem(placement: .topBarLeading) {
+                    Button("Schließen") {
+                        dismiss()
                     }
                 }
             }

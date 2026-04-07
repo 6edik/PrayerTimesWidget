@@ -37,23 +37,16 @@ struct PrayerSettingsView: View {
 
     var body: some View {
         NavigationStack {
-                AppPageHeader(title: "Einstellungen")
+                AppPageHeader(title: "Zeitparameter")
                     .fontDesign(nil)
             Form {
-                Section("Standort") {
-                    Button {
-                        isApplyingCurrentLocation = true
-                        locationHelper.requestCurrentPlace()
-                    } label: {
-                        Label("Aktuellen Standort verwenden", systemImage: "location.fill")
+                Section() {
+                    Picker("Methode", selection: $method) {
+                        ForEach(PrayerCalculationMethod.allCases) { item in
+                            Text(item.title).tag(item)
+                        }
                     }
-
-                    if let error = locationHelper.errorMessage {
-                        Text(error)
-                            .font(.footnote)
-                            .foregroundStyle(.red)
-                    }
-
+                    
                     NavigationLink {
                         CountryPickerView(selection: $selectedCountryCode)
                     } label: {
@@ -64,13 +57,6 @@ struct PrayerSettingsView: View {
                                 .foregroundStyle(selectedCountryCode.isEmpty ? .secondary : .primary)
                         }
                     }
-
-                    Picker("Stadt-Eingabe", selection: $cityInputMode) {
-                        ForEach(availableCityInputModes) { mode in
-                            Text(mode.rawValue).tag(mode)
-                        }
-                    }
-                    .pickerStyle(.segmented)
 
                     if cityInputMode == .picker && isGermanySelected {
                         NavigationLink {
@@ -90,13 +76,29 @@ struct PrayerSettingsView: View {
                             .textInputAutocapitalization(.words)
                             .autocorrectionDisabled()
                     }
-                }
-
-                Section("Automatische Daten") {
-                    Picker("Methode", selection: $method) {
-                        ForEach(PrayerCalculationMethod.allCases) { item in
-                            Text(item.title).tag(item)
+                    
+                    Picker("Stadt-Eingabe", selection: $cityInputMode) {
+                        ForEach(availableCityInputModes) { mode in
+                            Text(mode.rawValue).tag(mode)
                         }
+                    }
+                    .pickerStyle(.segmented)
+                    
+                    Button {
+                        isApplyingCurrentLocation = true
+                        locationHelper.requestCurrentPlace()
+                    } label: {
+                        Image(systemName: "location.fill")
+                    }
+                    .buttonStyle(.bordered)
+                    .buttonBorderShape(.circle)
+                    .controlSize(.small)
+                    .accessibilityLabel("Aktuellen Standort verwenden")
+
+                    if let error = locationHelper.errorMessage {
+                        Text(error)
+                            .font(.footnote)
+                            .foregroundStyle(.red)
                     }
                 }
 

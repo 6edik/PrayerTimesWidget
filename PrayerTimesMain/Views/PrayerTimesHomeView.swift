@@ -116,12 +116,12 @@ struct PrayerTimesHomeView: View {
             }
             .toolbar {
                 ToolbarItemGroup(placement: .topBarTrailing) {
-                    TopBarActionButton(systemImage: "magnifyingglass", accessibilityLabel: "Manuelle Suche") {
-                        activeSheet = .manualQuery
-                    }
-
                     TopBarActionButton(systemImage: "chart.bar", accessibilityLabel: "Statistiken") {
                         activeSheet = .statistics
+                    }
+                    
+                    TopBarActionButton(systemImage: "magnifyingglass", accessibilityLabel: "Manuelle Suche") {
+                        activeSheet = .manualQuery
                     }
 
                     TopBarActionButton(systemImage: "gearshape", accessibilityLabel: "Einstellungen") {

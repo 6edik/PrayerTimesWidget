@@ -46,20 +46,20 @@ struct ManualQueryView: View {
             AppPageHeader(title: "Gebetszeiten Suche")
                 .fontDesign(nil)
             Form {
-                Section("Standort") {
-                    Button {
-                        isApplyingCurrentLocation = true
-                        locationHelper.requestCurrentPlace()
-                    } label: {
-                        Label("Aktuellen Standort verwenden", systemImage: "location.fill")
+                Section() {
+                    Picker("Methode", selection: $viewModel.query.method) {
+                        ForEach(PrayerCalculationMethod.allCases) { item in
+                            Text(item.title).tag(item)
+                        }
                     }
 
-                    if let error = locationHelper.errorMessage {
-                        Text(error)
-                            .font(.footnote)
-                            .foregroundStyle(.red)
-                    }
+                    DatePicker(
+                        "Datum",
+                        selection: $viewModel.query.date,
+                        displayedComponents: .date
+                    )
 
+                    
                     NavigationLink {
                         CountryPickerView(selection: $selectedCountryCode)
                     } label: {
@@ -70,13 +70,6 @@ struct ManualQueryView: View {
                                 .foregroundStyle(selectedCountryCode.isEmpty ? .secondary : .primary)
                         }
                     }
-
-                    Picker("Stadt-Eingabe", selection: $cityInputMode) {
-                        ForEach(availableCityInputModes) { mode in
-                            Text(mode.rawValue).tag(mode)
-                        }
-                    }
-                    .pickerStyle(.segmented)
 
                     if cityInputMode == .picker && isGermanySelected {
                         NavigationLink {
@@ -96,33 +89,46 @@ struct ManualQueryView: View {
                             .textInputAutocapitalization(.words)
                             .autocorrectionDisabled()
                     }
-                }
-
-                Section("Manuelle Abfrage") {
-                    Picker("Methode", selection: $viewModel.query.method) {
-                        ForEach(PrayerCalculationMethod.allCases) { item in
-                            Text(item.title).tag(item)
+                    
+                    Picker("Stadt-Eingabe", selection: $cityInputMode) {
+                        ForEach(availableCityInputModes) { mode in
+                            Text(mode.rawValue).tag(mode)
                         }
                     }
-
-                    DatePicker(
-                        "Datum",
-                        selection: $viewModel.query.date,
-                        displayedComponents: .date
-                    )
-                }
-
-                Section {
-                    Button("Zeiten laden") {
-                        Task {
-                            await viewModel.runQuery(address: effectiveAddress)
+                    .pickerStyle(.segmented)
+                    
+                    HStack{
+                        Button {
+                            isApplyingCurrentLocation = true
+                            locationHelper.requestCurrentPlace()
+                        } label: {
+                            Image(systemName: "location.fill")
                         }
+                        .buttonStyle(.bordered)
+                        .buttonBorderShape(.circle)
+                        .controlSize(.small)
+                        .accessibilityLabel("Aktuellen Standort verwenden")
+                        .frame(maxWidth: .infinity, alignment: .leading)
+
+                        
+                        if let error = locationHelper.errorMessage {
+                            Text(error)
+                                .font(.footnote)
+                                .foregroundStyle(.red)
+                        }
+                        
+                        Button("Zeiten laden") {
+                            Task {
+                                await viewModel.runQuery(address: effectiveAddress)
+                            }
+                        }
+                        .frame(maxWidth: .infinity, alignment: .trailing)
+                        .disabled(
+                            effectiveCity.isEmpty ||
+                            selectedCountryCode.isEmpty ||
+                            viewModel.isLoading
+                        )
                     }
-                    .disabled(
-                        effectiveCity.isEmpty ||
-                        selectedCountryCode.isEmpty ||
-                        viewModel.isLoading
-                    )
                 }
 
                 if viewModel.isLoading {
@@ -137,11 +143,21 @@ struct ManualQueryView: View {
                             Text(result.address)
                                 .font(.headline)
 
-                            Text(result.date.formatted(date: .abbreviated, time: .omitted))
-                                .foregroundStyle(.secondary)
+                            HStack{
+                                Text(result.date.formatted(date: .abbreviated, time: .omitted))
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                Text(result.times.hijriDate)
+                                    .frame(maxWidth: .infinity, alignment: .trailing)
+                            }
+                            .foregroundStyle(.secondary)
 
-                            Text(result.method.title)
-                                .foregroundStyle(.secondary)
+                            HStack{
+                                Text(result.method.title)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                Text(result.times.timezone)
+                                    .frame(maxWidth: .infinity, alignment: .trailing)
+                            }
+                            .foregroundStyle(.secondary)
 
                             Divider()
 
@@ -152,13 +168,6 @@ struct ManualQueryView: View {
                             row("Maghrib", result.times.maghrib)
                             row("Isha", result.times.isha)
                         }
-                    }
-
-                    Section("Info") {
-                        Text(result.times.readableDate)
-                        Text(result.times.hijriDate)
-                        Text(result.times.timezone)
-                            .foregroundStyle(.secondary)
                     }
                 }
 
