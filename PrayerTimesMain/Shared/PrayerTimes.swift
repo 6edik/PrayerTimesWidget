@@ -13,3 +13,21 @@ struct PrayerTimes: Codable, Equatable {
     let hijriDay: String
     let timezone: String
 }
+
+extension PrayerTimes {
+    func applyingAdjustments(_ adjustments: PrayerAdjustments) -> PrayerTimes {
+        PrayerTimes(
+            fajr: PrayerTimeAdjuster.adjustTimeString(fajr, by: adjustments.fajr),
+            shuruk: PrayerTimeAdjuster.adjustTimeString(shuruk, by: adjustments.shuruk),
+            dhuhr: PrayerTimeAdjuster.adjustTimeString(dhuhr, by: adjustments.dhuhr),
+            asr: PrayerTimeAdjuster.adjustTimeString(asr, by: adjustments.asr),
+            maghrib: PrayerTimeAdjuster.adjustTimeString(maghrib, by: adjustments.maghrib),
+            isha: PrayerTimeAdjuster.adjustTimeString(isha, by: adjustments.isha),
+            readableDate: readableDate,
+            readableDay: readableDay,
+            hijriDate: hijriDate,
+            hijriDay: hijriDay,
+            timezone: timezone
+        )
+    }
+}

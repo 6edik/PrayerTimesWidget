@@ -555,13 +555,7 @@ struct PrayerTimesWidgetView: View {
 
         if let yesterdayIsha = yesterdayTimes?.isha,
            let yesterdayIshaDate = timeToDate(yesterdayIsha, base: yesterday) {
-            moments.append(
-                PrayerMoment(
-                    name: "Isha",
-                    time: yesterdayIsha,
-                    date: yesterdayIshaDate
-                )
-            )
+            moments.append(.init(name: "Isha", time: yesterdayIsha, date: yesterdayIshaDate))
         }
 
         let todayMoments: [(name: String, time: String)] = [
@@ -575,24 +569,12 @@ struct PrayerTimesWidgetView: View {
 
         for item in todayMoments {
             if let date = timeToDate(item.time, base: now) {
-                moments.append(
-                    PrayerMoment(
-                        name: item.name,
-                        time: item.time,
-                        date: date
-                    )
-                )
+                moments.append(.init(name: item.name, time: item.time, date: date))
             }
         }
 
         if let tomorrowFajrDate = timeToDate(tomorrowFajrTime, base: tomorrow) {
-            moments.append(
-                PrayerMoment(
-                    name: "Fajr",
-                    time: tomorrowFajrTime,
-                    date: tomorrowFajrDate
-                )
-            )
+            moments.append(.init(name: "Fajr", time: tomorrowFajrTime, date: tomorrowFajrDate))
         }
 
         moments.sort { $0.date < $1.date }
@@ -600,7 +582,6 @@ struct PrayerTimesWidgetView: View {
         guard !moments.isEmpty else {
             let fallbackStart = now
             let fallbackEnd = now.addingTimeInterval(60 * 60)
-
             return (
                 currentName: "Fajr",
                 currentTime: entry.times.fajr,
@@ -612,13 +593,10 @@ struct PrayerTimesWidgetView: View {
             )
         }
 
-        let current = moments.last(where: { $0.date <= now }) ?? moments.first!
-        let fallbackNext = PrayerMoment(
-            name: "Fajr",
-            time: tomorrowFajrTime,
-            date: timeToDate(tomorrowFajrTime, base: tomorrow) ?? now.addingTimeInterval(60 * 60)
-        )
-        let next = moments.first(where: { $0.date > now }) ?? fallbackNext
+        let currentIndex = max(moments.lastIndex(where: { $0.date <= now }) ?? 0, 0)
+        let current = moments[currentIndex]
+        let next = moments[min(currentIndex + 1, moments.count - 1)]
+
         let safeEnd = next.date > current.date ? next.date : current.date.addingTimeInterval(60 * 60)
 
         return (

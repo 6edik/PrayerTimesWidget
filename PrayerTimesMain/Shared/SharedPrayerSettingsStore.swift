@@ -11,7 +11,6 @@ struct SharedPrayerSettingsStore {
         else {
             return AutoPrayerSettings()
         }
-
         return decoded
     }
 
@@ -22,5 +21,15 @@ struct SharedPrayerSettingsStore {
 
     func loadPrayerSettings(for date: Date = Date()) -> PrayerSettings {
         loadAutoSettings().asPrayerSettings(for: date)
+    }
+
+    func loadAdjustments() -> PrayerAdjustments {
+        loadAutoSettings().adjustments
+    }
+
+    func saveAdjustments(_ adjustments: PrayerAdjustments) {
+        var settings = loadAutoSettings()
+        settings.adjustments = adjustments
+        saveAutoSettings(settings)
     }
 }

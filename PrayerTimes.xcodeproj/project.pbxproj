@@ -66,6 +66,7 @@
 				Shared/AppGroup.swift,
 				Shared/Modells/AutoPrayerSettings.swift,
 				Shared/Modells/PrayerCalculationMethod.swift,
+				Shared/Modells/PrayerTimeAdjuster.swift,
 				Shared/PrayerCachePolicy.swift,
 				Shared/PrayerSettings.swift,
 				Shared/PrayerTimes.swift,

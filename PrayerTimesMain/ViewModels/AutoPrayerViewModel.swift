@@ -26,16 +26,20 @@ final class AutoPrayerViewModel: ObservableObject {
         self.timesStore = resolvedTimesStore
         self.service = resolvedService
         self.autoSettings = resolvedSettingsStore.loadAutoSettings()
-        self.todayTimes = resolvedTimesStore.load(for: Date(), settings: resolvedSettingsStore.loadAutoSettings())
+
+        let rawToday = resolvedTimesStore.load(for: Date(), settings: resolvedSettingsStore.loadAutoSettings())
+        self.todayTimes = rawToday?.applyingAdjustments(self.autoSettings.adjustments)
     }
 
     func reloadLocalState() {
         let latestSettings = settingsStore.loadAutoSettings()
         autoSettings = latestSettings
-        todayTimes = timesStore.load(for: Date(), settings: latestSettings)
+
+        let rawToday = timesStore.load(for: Date(), settings: latestSettings)
+        todayTimes = rawToday?.applyingAdjustments(latestSettings.adjustments)
     }
 
-    func saveSettings(address: String, method: PrayerCalculationMethod) {
+    func saveSettings(address: String, method: PrayerCalculationMethod, adjustments: PrayerAdjustments) {
         let trimmed = address.trimmingCharacters(in: .whitespacesAndNewlines)
         let fallbackAddress = "Gelsenkirchen, DE"
         let newAddress = trimmed.isEmpty ? fallbackAddress : trimmed
@@ -50,19 +54,28 @@ final class AutoPrayerViewModel: ObservableObject {
 
         let addressChanged = oldNormalizedAddress != newNormalizedAddress
         let methodChanged = method != autoSettings.method
+        let adjustmentsChanged = adjustments != autoSettings.adjustments
 
         if addressChanged || methodChanged {
             timesStore.clear()
             todayTimes = nil
+        } else if adjustmentsChanged {
+            let rawToday = timesStore.load(for: Date(), settings: autoSettings)
+            todayTimes = rawToday?.applyingAdjustments(adjustments)
         }
 
         let updated = AutoPrayerSettings(
             address: newAddress,
-            method: method
+            method: method,
+            adjustments: adjustments
         )
 
         settingsStore.saveAutoSettings(updated)
         autoSettings = updated
+
+        if adjustmentsChanged {
+            WidgetCenter.shared.reloadAllTimelines()
+        }
     }
 
     func refreshTodayFromAPI() async {
@@ -80,7 +93,9 @@ final class AutoPrayerViewModel: ObservableObject {
             )
 
             timesStore.replaceCache(with: cache)
-            todayTimes = timesStore.load(for: Date(), settings: autoSettings)
+
+            let rawToday = timesStore.load(for: Date(), settings: autoSettings)
+            todayTimes = rawToday?.applyingAdjustments(autoSettings.adjustments)
 
             UserDefaults(suiteName: AppGroup.id)?.set(Date(), forKey: "last_refresh")
             WidgetCenter.shared.reloadTimelines(ofKind: AppGroup.widgetKind)

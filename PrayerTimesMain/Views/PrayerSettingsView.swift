@@ -15,6 +15,13 @@ struct PrayerSettingsView: View {
     @State private var method: PrayerCalculationMethod = .ditib
     @State private var cityInputMode: CityInputMode = .manual
 
+    @State private var fajrAdjustment = 0
+    @State private var shurukAdjustment = 0
+    @State private var dhuhrAdjustment = 0
+    @State private var asrAdjustment = 0
+    @State private var maghribAdjustment = 0
+    @State private var ishaAdjustment = 0
+
     @State private var didLoadInitialValues = false
     @State private var isApplyingCurrentLocation = false
 
@@ -35,18 +42,30 @@ struct PrayerSettingsView: View {
         isGermanySelected ? CityInputMode.allCases : [.manual]
     }
 
+    private var adjustments: PrayerAdjustments {
+        PrayerAdjustments(
+            fajr: fajrAdjustment,
+            shuruk: shurukAdjustment,
+            dhuhr: dhuhrAdjustment,
+            asr: asrAdjustment,
+            maghrib: maghribAdjustment,
+            isha: ishaAdjustment
+        )
+    }
+
     var body: some View {
         NavigationStack {
-                AppPageHeader(title: "Zeitparameter")
-                    .fontDesign(nil)
+            AppPageHeader(title: "Zeitparameter")
+                .fontDesign(nil)
+
             Form {
-                Section() {
+                Section("Gebetsprofil") {
                     Picker("Methode", selection: $method) {
                         ForEach(PrayerCalculationMethod.allCases) { item in
                             Text(item.title).tag(item)
                         }
                     }
-                    
+
                     NavigationLink {
                         CountryPickerView(selection: $selectedCountryCode)
                     } label: {
@@ -76,14 +95,14 @@ struct PrayerSettingsView: View {
                             .textInputAutocapitalization(.words)
                             .autocorrectionDisabled()
                     }
-                    
+
                     Picker("Stadt-Eingabe", selection: $cityInputMode) {
                         ForEach(availableCityInputModes) { mode in
                             Text(mode.rawValue).tag(mode)
                         }
                     }
                     .pickerStyle(.segmented)
-                    
+
                     Button {
                         isApplyingCurrentLocation = true
                         locationHelper.requestCurrentPlace()
@@ -102,8 +121,17 @@ struct PrayerSettingsView: View {
                     }
                 }
 
+                Section("Justierung") {
+                    adjustmentRow(title: "Fajr", value: $fajrAdjustment)
+                    adjustmentRow(title: "Shuruk", value: $shurukAdjustment)
+                    adjustmentRow(title: "Dhuhr", value: $dhuhrAdjustment)
+                    adjustmentRow(title: "Asr", value: $asrAdjustment)
+                    adjustmentRow(title: "Maghrib", value: $maghribAdjustment)
+                    adjustmentRow(title: "Isha", value: $ishaAdjustment)
+                }
+
                 Section("Hinweis") {
-                    Text("Diese Einstellungen gelten für tägliche API-Abfrage, Cache und Widget.")
+                    Text("Die API-Werte bleiben im Cache unverändert. Die Minuten-Justierung wird erst bei der Anzeige in App und Widget angewendet.")
                         .foregroundStyle(.secondary)
                 }
             }
@@ -124,7 +152,8 @@ struct PrayerSettingsView: View {
 
                         viewModel.saveSettings(
                             address: address,
-                            method: method
+                            method: method,
+                            adjustments: adjustments
                         )
 
                         onSaved()
@@ -142,6 +171,14 @@ struct PrayerSettingsView: View {
 
                 viewModel.reloadLocalState()
                 method = viewModel.autoSettings.method
+
+                let savedAdjustments = viewModel.autoSettings.adjustments
+                fajrAdjustment = savedAdjustments.fajr
+                shurukAdjustment = savedAdjustments.shuruk
+                dhuhrAdjustment = savedAdjustments.dhuhr
+                asrAdjustment = savedAdjustments.asr
+                maghribAdjustment = savedAdjustments.maghrib
+                ishaAdjustment = savedAdjustments.isha
 
                 let parts = viewModel.autoSettings.address
                     .split(separator: ",", maxSplits: 1)
@@ -181,9 +218,7 @@ struct PrayerSettingsView: View {
 
                 guard !oldValue.isEmpty, !isApplyingCurrentLocation else { return }
 
-                if oldValue != newValue {
-                    selectedCityFromPicker = ""
-                }
+                selectedCityFromPicker = ""
             }
             .onReceive(locationHelper.$detectedPlace) { place in
                 guard isApplyingCurrentLocation, let place else { return }
@@ -205,6 +240,24 @@ struct PrayerSettingsView: View {
                 isApplyingCurrentLocation = false
             }
         }
+    }
+
+    @ViewBuilder
+    private func adjustmentRow(title: String, value: Binding<Int>) -> some View {
+        Stepper(value: value, in: -60...60, step: 1) {
+            HStack {
+                Text(title)
+                Spacer()
+                Text(formattedOffset(value.wrappedValue))
+                    .foregroundStyle(value.wrappedValue == 0 ? .secondary : .primary)
+                    .monospacedDigit()
+            }
+        }
+    }
+
+    private func formattedOffset(_ value: Int) -> String {
+        if value == 0 { return "0 Min." }
+        return value > 0 ? "+\(value) Min." : "\(value) Min."
     }
 
     private func countryDisplayName(for code: String) -> String? {

@@ -169,8 +169,8 @@ struct PrayerTimesHomeView: View {
         currentAddress = autoSettings.address
         currentMethod = autoSettings.method.title
 
-        if let cachedToday = store.load(for: Date(), settings: autoSettings) {
-            prayerTimes = cachedToday
+        if let cachedRawToday = store.load(for: Date(), settings: autoSettings) {
+            prayerTimes = cachedRawToday.applyingAdjustments(autoSettings.adjustments)
         }
 
         let shouldFetch =
@@ -201,8 +201,8 @@ struct PrayerTimesHomeView: View {
 
             store.replaceCache(with: cache)
 
-            if let today = store.load(for: Date(), settings: autoSettings) {
-                prayerTimes = today
+            if let rawToday = store.load(for: Date(), settings: autoSettings) {
+                prayerTimes = rawToday.applyingAdjustments(autoSettings.adjustments)
             }
 
             saveLastRefreshDate()
@@ -214,10 +214,8 @@ struct PrayerTimesHomeView: View {
 
             WidgetCenter.shared.reloadTimelines(ofKind: AppGroup.widgetKind)
         } catch {
-            print("LOAD ERROR:", error)
-
-            if let cachedToday = store.load(for: Date(), settings: autoSettings) {
-                prayerTimes = cachedToday
+            if let cachedRawToday = store.load(for: Date(), settings: autoSettings) {
+                prayerTimes = cachedRawToday.applyingAdjustments(autoSettings.adjustments)
             }
 
             errorMessage = error.localizedDescription

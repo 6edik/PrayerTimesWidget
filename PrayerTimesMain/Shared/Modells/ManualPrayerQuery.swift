@@ -4,6 +4,7 @@ struct ManualPrayerQuery: Equatable {
     var address: String = ""
     var method: PrayerCalculationMethod = .ditib
     var date: Date = Date()
+    var adjustments: PrayerAdjustments = .zero
 
     init() {}
 
@@ -11,6 +12,7 @@ struct ManualPrayerQuery: Equatable {
         self.address = seed.address
         self.method = seed.method
         self.date = date
+        self.adjustments = seed.adjustments
     }
 
     var asPrayerSettings: PrayerSettings {

@@ -18,7 +18,7 @@ struct Provider: TimelineProvider {
         readableDay: "--",
         hijriDate: "--",
         hijriDay: "--",
-        timezone: "--",
+        timezone: "--"
     )
 
     func placeholder(in context: Context) -> PrayerEntry {
@@ -83,7 +83,6 @@ struct Provider: TimelineProvider {
             }
 
             let entries = buildEntries(from: now, settings: settings)
-
             statsStore.incrementTimelineBuildCount()
 
             completion(
@@ -96,25 +95,29 @@ struct Provider: TimelineProvider {
     }
 
     private func makeEntry(for date: Date, settings: AutoPrayerSettings) -> PrayerEntry {
-        PrayerEntry(
+        let raw = store.load(for: date, settings: settings) ?? fallback
+        let adjusted = raw.applyingAdjustments(settings.adjustments)
+
+        return PrayerEntry(
             date: date,
-            times: store.load(for: date, settings: settings) ?? fallback,
-            previousDayTimes: store.loadPreviousDay(for: date, settings: settings)
+            times: adjusted,
+            previousDayTimes: store.loadPreviousDay(for: date, settings: settings)?
+                .applyingAdjustments(settings.adjustments)
         )
     }
 
     private func buildEntries(from now: Date, settings: AutoPrayerSettings) -> [PrayerEntry] {
         var dates: [Date] = [now]
 
-        let todayTimes = store.load(for: now, settings: settings) ?? fallback
-        appendPrayerMoments(for: todayTimes, base: now, threshold: now, into: &dates)
+        let todayRaw = store.load(for: now, settings: settings) ?? fallback
+        appendPrayerMoments(for: todayRaw.applyingAdjustments(settings.adjustments), base: now, threshold: now, into: &dates)
 
         if let tomorrowStart = nextMidnightRefreshDate(from: now) {
             dates.append(tomorrowStart)
 
-            let tomorrowTimes = store.load(for: tomorrowStart, settings: settings) ?? fallback
+            let tomorrowRaw = store.load(for: tomorrowStart, settings: settings) ?? fallback
             appendPrayerMoments(
-                for: tomorrowTimes,
+                for: tomorrowRaw.applyingAdjustments(settings.adjustments),
                 base: tomorrowStart,
                 threshold: now,
                 into: &dates
@@ -131,14 +134,7 @@ struct Provider: TimelineProvider {
         threshold: Date,
         into dates: inout [Date]
     ) {
-        let prayerMoments = [
-            times.fajr,
-            times.shuruk,
-            times.dhuhr,
-            times.asr,
-            times.maghrib,
-            times.isha
-        ]
+        let prayerMoments = [times.fajr, times.shuruk, times.dhuhr, times.asr, times.maghrib, times.isha]
 
         for value in prayerMoments {
             if let date = timeToDate(value, base: base), date > threshold {
@@ -149,14 +145,11 @@ struct Provider: TimelineProvider {
 
     private func timeToDate(_ value: String, base: Date) -> Date? {
         let parts = value.split(separator: ":")
-
         guard
             parts.count >= 2,
             let hour = Int(parts[0]),
             let minute = Int(parts[1])
-        else {
-            return nil
-        }
+        else { return nil }
 
         return calendar.date(
             bySettingHour: hour,

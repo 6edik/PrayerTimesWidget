@@ -3,6 +3,7 @@ import Foundation
 struct AutoPrayerSettings: Codable, Equatable {
     var address: String = "Gelsenkirchen, DE"
     var method: PrayerCalculationMethod = .ditib
+    var adjustments: PrayerAdjustments = .zero
 
     func asPrayerSettings(for date: Date = Date()) -> PrayerSettings {
         PrayerSettings(
