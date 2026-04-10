@@ -1,12 +1,12 @@
 import Foundation
 
 enum PrayerCalculationMethod: Int, CaseIterable, Codable, Identifiable {
-    case karachi = 1
+    case ditib = 13
     case muslimWorldLeague = 3
+    case karachi = 1
     case ummAlQura = 4
     case egyptian = 5
     case dubai = 8
-    case ditib = 13
 
     nonisolated var id: Int { rawValue }
 

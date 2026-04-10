@@ -1,6 +1,5 @@
 import SwiftUI
 import BackgroundTasks
-import WidgetKit
 
 @main
 struct PrayerTimesApp: App {
@@ -51,7 +50,9 @@ struct PrayerTimesApp: App {
                     RefreshStatsStore().setNextPlannedRefresh(request.earliestBeginDate)
                 }
             } catch {
+                #if DEBUG
                 print("BG refresh scheduling failed:", error)
+                #endif
             }
         }
     }
@@ -66,76 +67,17 @@ struct PrayerTimesApp: App {
             let semaphore = DispatchSemaphore(value: 0)
 
             Task {
-                let service = PrayerTimesService()
-
-                let (store, statsStore, autoSettings, prayerSettings) = await MainActor.run {
-                    let store = SharedPrayerTimesStore()
-                    let settingsStore = SharedPrayerSettingsStore()
-                    let statsStore = RefreshStatsStore()
-                    let autoSettings = settingsStore.loadAutoSettings()
-                    let prayerSettings = settingsStore.loadPrayerSettings(for: Date())
-                    return (store, statsStore, autoSettings, prayerSettings)
+                // Same refresh policy as the app and the widget: one shared
+                // "does this need a network refresh" check and one shared
+                // set of post-refresh side effects (stats, widget reload).
+                let autoSettings = await MainActor.run {
+                    SharedPrayerSettingsStore().loadAutoSettings()
                 }
 
-                let shouldFetch = await MainActor.run {
-                    !store.hasToday(for: autoSettings, referenceDate: Date()) ||
-                    store.needsRefresh(
-                        settings: autoSettings,
-                        referenceDate: Date(),
-                        refreshThresholdDays: 2
-                    )
-                }
-
-                if !shouldFetch {
-                    await MainActor.run {
-                        statsStore.setNextPlannedRefresh(
-                            store.suggestedRefreshDate(
-                                settings: autoSettings,
-                                refreshThresholdDays: 2
-                            )
-                        )
-                    }
-                    semaphore.signal()
-                    return
-                }
-
-                await MainActor.run {
-                    statsStore.markAttempt(source: .backgroundTask)
-                }
-
-                do {
-                    let fetchStart = PrayerCachePolicy.fetchStart(from: prayerSettings.date)
-
-                    let cache = try await service.fetchPrayerTimesCache(
-                        settings: prayerSettings,
-                        referenceDate: fetchStart,
-                        coverageDays: PrayerCachePolicy.totalDays
-                    )
-
-                    await MainActor.run {
-                        store.replaceCache(with: cache)
-                        UserDefaults(suiteName: AppGroup.id)?.set(Date(), forKey: "last_refresh")
-
-                        statsStore.markSuccess(source: .backgroundTask)
-                        statsStore.incrementWidgetReloadCount()
-                        statsStore.setNextPlannedRefresh(
-                            store.suggestedRefreshDate(
-                                settings: autoSettings,
-                                refreshThresholdDays: 2
-                            )
-                        )
-                    }
-
-                    WidgetCenter.shared.reloadTimelines(ofKind: AppGroup.widgetKind)
-                } catch {
-                    await MainActor.run {
-                        statsStore.markFailure(
-                            source: .backgroundTask,
-                            error: error.localizedDescription
-                        )
-                    }
-                    print("Background refresh failed:", error)
-                }
+                _ = await PrayerRefreshCoordinator().refreshIfNeeded(
+                    settings: autoSettings,
+                    source: .backgroundTask
+                )
 
                 semaphore.signal()
             }

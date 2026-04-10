@@ -1,14 +1,29 @@
 import Foundation
 
+struct HijriDay: Codable, Equatable {
+    let day: String
+    let month: String
+    let year: String
+
+    var displayText: String {
+        "\(day). \(month) \(year)"
+    }
+}
+
 struct PrayerDay: Codable, Identifiable {
     let isoDate: String
+    let hijri: HijriDay?
     let times: PrayerTimes
 
     var id: String { isoDate }
 }
 
 struct PrayerTimesCache: Codable {
-    let addressKey: String
+    // Coordinate-based when the settings that produced this cache had a
+    // confirmed location, address-based otherwise — see `LocationKey`.
+    // Never compare cache entries by display name alone: the bundled city
+    // list has 22 duplicate names (e.g. two different "Essen"s).
+    let locationKey: String
     let methodKey: String
     let fetchedAt: Date
     let days: [PrayerDay]
@@ -17,7 +32,7 @@ struct PrayerTimesCache: Codable {
     var lastISODate: String? { days.last?.isoDate }
 
     static let empty = PrayerTimesCache(
-        addressKey: "",
+        locationKey: "",
         methodKey: "",
         fetchedAt: .distantPast,
         days: []

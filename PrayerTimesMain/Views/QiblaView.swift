@@ -15,15 +15,19 @@ struct QiblaView: View {
         NavigationStack {
             AppPageContainer {
                 AppPageHeader(title: "Gebetsrichtung")
-
                 headerSection
-                compassSection
 
-                if !viewModel.canUseLiveLocation {
-                    locationHintCard
+                if viewModel.canUseLiveLocation {
+                    compassSection
+                } else {
+                    // Ohne Standortfreigabe funktioniert der Kompass nicht —
+                    // statt ihn (nicht funktionsfähig) anzuzeigen, steht die
+                    // Freigabe-Karte direkt sichtbar an seiner Stelle, statt
+                    // weit unten auf der Seite.
+                    locationPermissionCard
                 }
 
-                if let errorMessage = viewModel.state.errorMessage {
+                if viewModel.canUseLiveLocation, let errorMessage = viewModel.state.errorMessage {
                     errorSection(errorMessage)
                 }
             }
@@ -49,11 +53,15 @@ struct QiblaView: View {
                     .presentationDetents([.medium, .large])
                     .presentationDragIndicator(.visible)
             }
-            .safeAreaInset(edge: .bottom) {
-                bottomBar
+            .background(Color.clear)
+            .overlay(alignment: .bottom) {
+                if viewModel.canUseLiveLocation {
+                    bottomBar
+                        .frame(maxWidth: .infinity)
+                        .padding(.bottom, 10)
+                }
             }
         }
-        .background(backgroundGradient.ignoresSafeArea())
         .onAppear {
             alignmentHaptic.prepare()
 
@@ -99,40 +107,44 @@ struct QiblaView: View {
 
     private var headerSection: some View {
         VStack(spacing: 4) {
-            Text(viewModel.state.cityLabel)
-                .font(.subheadline.weight(.medium))
-                .foregroundStyle(.primary)
+            if viewModel.canUseLiveLocation {
+                Text(viewModel.state.cityLabel)
+                    .font(.subheadline.weight(.medium))
+                    .foregroundStyle(.primary)
 
-            Text(viewModel.state.coordinateLabel)
-                .font(.caption)
-                .foregroundStyle(.secondary)
+                Text(viewModel.state.coordinateLabel)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
 
-            Text(alignmentText)
-                .font(.footnote.weight(.medium))
-                .foregroundStyle(alignmentColor)
-                .padding(.top, 2)
+                Text(alignmentText)
+                    .font(.footnote.weight(.medium))
+                    .foregroundStyle(alignmentColor)
+                    .padding(.top, 2)
+            }
         }
     }
 
     private var compassSection: some View {
         VStack(spacing: 18) {
-            ZStack {
-                rotatingCompassLayer
-
-                Image("staticcomp")
-                    .resizable()
-                    .scaledToFit()
-                    .frame(width: compassSize, height: compassSize)
-                    .allowsHitTesting(false)
-
-                centerPin
-            }
-            .frame(width: compassSize, height: compassSize)
+            // Isolated in its own view observing the needle animator
+            // directly, so the up-to-120Hz rotation animation only
+            // re-renders this small dial instead of the whole page
+            // (header, bottom bar, gradients) on every frame.
+            QiblaCompassDial(
+                needleAnimator: viewModel.needleAnimator,
+                qiblaBearing: viewModel.state.qiblaBearing,
+                compassSize: compassSize
+            )
             .frame(maxWidth: .infinity)
 
             VStack(spacing: 6) {
                 Text(directionInstruction)
                     .font(.headline)
+                    .multilineTextAlignment(.center)
+
+                Text("Entfernung zur Kaaba: \(viewModel.state.distanceText)")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
 
                 Text("Kompassbezug: \(viewModel.state.headingReference.label)")
@@ -144,61 +156,33 @@ struct QiblaView: View {
         }
     }
 
-    private var locationHintCard: some View {
-        VStack(spacing: 12) {
-            Text("Standort für exaktere Qibla")
+    private var locationPermissionCard: some View {
+        VStack(spacing: 14) {
+            Image(systemName: "location.slash.fill")
+                .font(.system(size: 40))
+                .foregroundStyle(.orange)
+
+            Text("Standortzugriff erforderlich")
                 .font(.headline)
 
-            Text("Der Kompass läuft bereits. Für eine genauere Qibla-Berechnung kannst du deinen Standort freigeben.")
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-                .multilineTextAlignment(.center)
+            Text(
+                viewModel.state.authorizationDenied
+                ? "Der Kompass braucht deinen Standort für die Gebetsrichtung. Bitte erlaube den Zugriff in den Einstellungen."
+                : "Der Kompass braucht deinen Standort, um die Gebetsrichtung (Qibla) korrekt zu berechnen. Ohne Freigabe zeigt er keine Richtung an."
+            )
+            .font(.subheadline)
+            .foregroundStyle(.secondary)
+            .multilineTextAlignment(.center)
 
-            Button("Standort verwenden") {
+            Button(viewModel.state.authorizationDenied ? "Einstellungen öffnen" : "Standort freigeben") {
                 viewModel.activateLocationAccess()
             }
             .buttonStyle(.borderedProminent)
         }
-        .padding(20)
-        .frame(maxWidth: .infinity)
+        .padding(24)
+        .frame(maxWidth: .infinity, minHeight: compassSize)
         .background(.thinMaterial)
         .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
-    }
-
-    private var rotatingCompassLayer: some View {
-        ZStack {
-            Image("qiblaCompassBg")
-                .resizable()
-                .scaledToFill()
-                .frame(width: compassSize, height: compassSize)
-                .scaleEffect(1.035)
-
-            QiblaRingMarker(
-                angle: viewModel.state.qiblaBearing,
-                isAligned: isAligned
-            )
-            .frame(width: compassSize, height: compassSize)
-        }
-        .frame(width: compassSize, height: compassSize)
-        .clipShape(Circle())
-        .overlay {
-            Circle()
-                .stroke(
-                    LinearGradient(
-                        colors: [
-                            Color(red: 0.93, green: 0.72, blue: 0.34),
-                            Color(red: 0.78, green: 0.55, blue: 0.18)
-                        ],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    ),
-                    lineWidth: 4
-                )
-        }
-        .rotationEffect(.degrees(-viewModel.needleAnimator.displayedHeading))
-        .transaction { transaction in
-            transaction.animation = nil
-        }
     }
 
     private func errorSection(_ message: String) -> some View {
@@ -214,36 +198,33 @@ struct QiblaView: View {
     }
 
     private var bottomBar: some View {
-        VStack(spacing: 10) {
-            HStack(spacing: 12) {
-                bottomMetric(title: "Qibla", value: viewModel.state.bearingText)
-                bottomMetric(title: "Gerät", value: viewModel.state.userHeadingText)
-                bottomMetric(title: "Abweich.", value: offsetText)
-            }
-
-            HStack(spacing: 8) {
-                Text(viewModel.state.cityLabel)
-                    .lineLimit(1)
-
-                Text("•")
-                    .foregroundStyle(.tertiary)
-
-                Text(viewModel.state.accuracyText)
-                    .lineLimit(1)
-            }
-            .font(.caption2)
-            .foregroundStyle(.secondary)
+        HStack(spacing: 12) {
+            bottomMetric(title: "Qibla", value: viewModel.state.bearingText)
+            bottomMetric(title: "Gerät", value: viewModel.state.userHeadingText)
+            bottomMetric(title: "Abweich.", value: offsetText)
+            bottomMetric(title: "Genauigk.", value: viewModel.state.accuracyText)
         }
-        .padding(.horizontal, 16)
-        .padding(.top, 12)
-        .padding(.bottom, 12)
-        .frame(maxWidth: .infinity)
-        .background(.ultraThinMaterial)
+        .padding(.horizontal, 18)
+        .padding(.vertical, 14)
+        .frame(maxWidth: 340)
+        .background(.thinMaterial)
+        .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
         .overlay(alignment: .top) {
-            Rectangle()
-                .fill(Color.primary.opacity(0.06))
-                .frame(height: 0.5)
+            RoundedRectangle(cornerRadius: 22, style: .continuous)
+                .stroke(
+                    LinearGradient(
+                        colors: [
+                            Color.white.opacity(0.35),
+                            Color.white.opacity(0.06),
+                            Color.clear
+                        ],
+                        startPoint: .top,
+                        endPoint: .bottom
+                    ),
+                    lineWidth: 1
+                )
         }
+        .shadow(color: .black.opacity(0.16), radius: 16, y: 8)
     }
 
     private func bottomMetric(title: String, value: String) -> some View {
@@ -259,19 +240,6 @@ struct QiblaView: View {
                 .minimumScaleFactor(0.75)
         }
         .frame(maxWidth: .infinity)
-    }
-
-    private var centerPin: some View {
-        ZStack {
-            Circle()
-                .fill(Color.white.opacity(0.96))
-                .frame(width: 18, height: 18)
-                .shadow(color: .black.opacity(0.08), radius: 3, y: 1)
-
-            Circle()
-                .fill(Color(red: 0.71, green: 0.54, blue: 0.22))
-                .frame(width: 5, height: 5)
-        }
     }
 
     private var alignmentDelta: Double {
@@ -317,6 +285,84 @@ struct QiblaView: View {
             startPoint: .top,
             endPoint: .bottom
         )
+    }
+}
+
+/// The rotating needle dial, isolated so it can observe `needleAnimator`
+/// directly. Its `displayedHeading` changes up to ~120 times per second
+/// while the compass is settling; keeping that observation scoped to just
+/// this small view (instead of the whole `QiblaView`) means only this dial
+/// re-renders per frame — not the header, bottom bar and their gradients.
+private struct QiblaCompassDial: View {
+    @ObservedObject var needleAnimator: QiblaNeedleAnimator
+    let qiblaBearing: Double
+    let compassSize: CGFloat
+
+    private var alignmentDelta: Double {
+        let raw = QiblaCalculator.normalized(qiblaBearing - needleAnimator.displayedHeading)
+        return raw > 180 ? raw - 360 : raw
+    }
+
+    private var isAligned: Bool {
+        abs(alignmentDelta) <= 5
+    }
+
+    var body: some View {
+        ZStack {
+            rotatingCompassLayer
+            centerPin
+        }
+        .frame(width: compassSize, height: compassSize)
+    }
+
+    private var rotatingCompassLayer: some View {
+        ZStack {
+            Image("qiblaCompassBg")
+                .resizable()
+                .scaledToFill()
+                .frame(width: compassSize, height: compassSize)
+                .scaleEffect(1.035)
+
+            QiblaRingMarker(
+                angle: qiblaBearing,
+                isAligned: isAligned
+            )
+            .frame(width: compassSize, height: compassSize)
+        }
+        .frame(width: compassSize, height: compassSize)
+        .clipShape(Circle())
+        .overlay {
+            Circle()
+                .stroke(
+                    LinearGradient(
+                        colors: [
+                            Color(red: 0.93, green: 0.72, blue: 0.34),
+                            Color(red: 0.78, green: 0.55, blue: 0.18)
+                        ],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    ),
+                    lineWidth: 4
+                )
+        }
+        .shadow(color: Color.orange.opacity(0.14), radius: 24, y: 8)
+        .rotationEffect(.degrees(-needleAnimator.displayedHeading))
+        .transaction { transaction in
+            transaction.animation = nil
+        }
+    }
+
+    private var centerPin: some View {
+        ZStack {
+            Circle()
+                .fill(Color.white.opacity(0.96))
+                .frame(width: 18, height: 18)
+                .shadow(color: .black.opacity(0.08), radius: 3, y: 1)
+
+            Circle()
+                .fill(Color(red: 0.71, green: 0.54, blue: 0.22))
+                .frame(width: 5, height: 5)
+        }
     }
 }
 

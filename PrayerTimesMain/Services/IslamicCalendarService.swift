@@ -49,7 +49,8 @@ struct IslamicCalendarService {
                     hijriMonth: day.hijri.month.en,
                     hijriYear: day.hijri.year,
                     hijriWeekday: day.hijri.weekday.ar ?? day.hijri.weekday.en,
-                    sortDate: formatter.date(from: day.gregorian.date) ?? .distantPast
+                    sortDate: formatter.date(from: day.gregorian.date) ?? .distantPast,
+                    hijriMonthNumber: day.hijri.month.number
                 )
             }
         }

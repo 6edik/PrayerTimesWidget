@@ -11,20 +11,19 @@ final class AutoPrayerViewModel: ObservableObject {
 
     private let settingsStore: SharedPrayerSettingsStore
     private let timesStore: SharedPrayerTimesStore
-    private let service: PrayerTimesService
+    private let refreshCoordinator: PrayerRefreshCoordinator
 
     init(
         settingsStore: SharedPrayerSettingsStore? = nil,
         timesStore: SharedPrayerTimesStore? = nil,
-        service: PrayerTimesService? = nil
+        refreshCoordinator: PrayerRefreshCoordinator? = nil
     ) {
         let resolvedSettingsStore = settingsStore ?? SharedPrayerSettingsStore()
         let resolvedTimesStore = timesStore ?? SharedPrayerTimesStore()
-        let resolvedService = service ?? PrayerTimesService()
 
         self.settingsStore = resolvedSettingsStore
         self.timesStore = resolvedTimesStore
-        self.service = resolvedService
+        self.refreshCoordinator = refreshCoordinator ?? PrayerRefreshCoordinator(store: resolvedTimesStore)
         self.autoSettings = resolvedSettingsStore.loadAutoSettings()
 
         let rawToday = resolvedTimesStore.load(for: Date(), settings: resolvedSettingsStore.loadAutoSettings())
@@ -39,24 +38,30 @@ final class AutoPrayerViewModel: ObservableObject {
         todayTimes = rawToday?.applyingAdjustments(latestSettings.adjustments)
     }
 
-    func saveSettings(address: String, method: PrayerCalculationMethod, adjustments: PrayerAdjustments) {
+    /// - Parameter location: the coordinate confirmed by the city list or
+    ///   GPS for `address`, if any. Pass `nil` for free-text addresses —
+    ///   never guess a coordinate from the name here.
+    func saveSettings(
+        address: String,
+        location: PrayerLocation?,
+        method: PrayerCalculationMethod,
+        adjustments: PrayerAdjustments
+    ) {
         let trimmed = address.trimmingCharacters(in: .whitespacesAndNewlines)
-        let fallbackAddress = "Gelsenkirchen, DE"
-        let newAddress = trimmed.isEmpty ? fallbackAddress : trimmed
+        let newAddress = trimmed.isEmpty ? PrayerLocation.defaultGelsenkirchen.name : trimmed
+        let newLocation = trimmed.isEmpty ? PrayerLocation.defaultGelsenkirchen : location
 
-        let oldNormalizedAddress = autoSettings.address
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-            .lowercased()
+        // Location-key aware, not just a display-name comparison: the
+        // bundled city list has 22 duplicate names, so two different
+        // places could otherwise look "unchanged" by name alone.
+        let oldKey = LocationKey.key(address: autoSettings.address, location: autoSettings.location)
+        let newKey = LocationKey.key(address: newAddress, location: newLocation)
 
-        let newNormalizedAddress = newAddress
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-            .lowercased()
-
-        let addressChanged = oldNormalizedAddress != newNormalizedAddress
+        let locationChanged = oldKey != newKey
         let methodChanged = method != autoSettings.method
         let adjustmentsChanged = adjustments != autoSettings.adjustments
 
-        if addressChanged || methodChanged {
+        if locationChanged || methodChanged {
             timesStore.clear()
             todayTimes = nil
         } else if adjustmentsChanged {
@@ -66,6 +71,7 @@ final class AutoPrayerViewModel: ObservableObject {
 
         let updated = AutoPrayerSettings(
             address: newAddress,
+            location: newLocation,
             method: method,
             adjustments: adjustments
         )
@@ -73,7 +79,12 @@ final class AutoPrayerViewModel: ObservableObject {
         settingsStore.saveAutoSettings(updated)
         autoSettings = updated
 
-        if adjustmentsChanged {
+        // Reload on every save, not just when the adjustments changed: a
+        // location/method change invalidates the widget's cache too, and
+        // the widget should stop showing the previous location's timeline
+        // as soon as possible instead of waiting for its next natural
+        // refresh.
+        if locationChanged || methodChanged || adjustmentsChanged {
             WidgetCenter.shared.reloadAllTimelines()
         }
     }
@@ -82,25 +93,17 @@ final class AutoPrayerViewModel: ObservableObject {
         isLoading = true
         errorMessage = nil
 
-        do {
-            let settings = settingsStore.loadPrayerSettings(for: Date())
-            let fetchStart = PrayerCachePolicy.fetchStart(from: settings.date)
+        let outcome = await refreshCoordinator.refreshIfNeeded(
+            settings: autoSettings,
+            source: .manual,
+            forceNetwork: true
+        )
 
-            let cache = try await service.fetchPrayerTimesCache(
-                settings: settings,
-                referenceDate: fetchStart,
-                coverageDays: PrayerCachePolicy.totalDays
-            )
+        let rawToday = timesStore.load(for: Date(), settings: autoSettings)
+        todayTimes = rawToday?.applyingAdjustments(autoSettings.adjustments)
 
-            timesStore.replaceCache(with: cache)
-
-            let rawToday = timesStore.load(for: Date(), settings: autoSettings)
-            todayTimes = rawToday?.applyingAdjustments(autoSettings.adjustments)
-
-            UserDefaults(suiteName: AppGroup.id)?.set(Date(), forKey: "last_refresh")
-            WidgetCenter.shared.reloadTimelines(ofKind: AppGroup.widgetKind)
-        } catch {
-            errorMessage = error.localizedDescription
+        if case .failure(let message) = outcome {
+            errorMessage = message
         }
 
         isLoading = false

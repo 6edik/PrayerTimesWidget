@@ -29,7 +29,6 @@ struct QiblaInfoSheet: View {
                             .font(.system(size: 13, weight: .semibold))
                             .foregroundStyle(.primary)
                             .frame(width: 32, height: 32)
-                            .background(.ultraThinMaterial, in: Circle())
                     }
                     .accessibilityLabel("Schließen")
                 }
@@ -169,30 +168,5 @@ struct QiblaInfoSheet: View {
     
     private var accentStrong: Color {
         Color(red: 0.73, green: 0.55, blue: 0.20)
-    }
-}
-
-// MARK: - View Extensions
-extension View {
-    func glassCard(cornerRadius: CGFloat) -> some View {
-        self
-            .background(.ultraThinMaterial)
-            .overlay(
-                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                    .stroke(Color.black.opacity(0.04), lineWidth: 1)
-            )
-            .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
-    }
-    
-    func glassBackground(cornerRadius: CGFloat) -> some View {
-        self
-            .background(
-                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                    .fill(Color.white.opacity(0.45))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                            .stroke(Color.black.opacity(0.04), lineWidth: 1)
-                    )
-            )
     }
 }

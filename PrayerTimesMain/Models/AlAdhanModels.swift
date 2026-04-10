@@ -225,8 +225,7 @@ nonisolated struct DateDesignation: Decodable {
 
 // MARK: - App Model
 
-nonisolated struct IslamicSpecialDay: Identifiable {
-    let id = UUID()
+nonisolated struct IslamicSpecialDay: Codable, Identifiable, Equatable {
     let title: String
     let gregorianReadable: String
     let gregorianMonthName: String
@@ -236,4 +235,16 @@ nonisolated struct IslamicSpecialDay: Identifiable {
     let hijriYear: String
     let hijriWeekday: String
     let sortDate: Date
+    // AlAdhan's own Hijri month number for this holiday (e.g. 9 for
+    // Ramadan). Used to classify "major holiday" status against AlAdhan's
+    // own Hijri day, instead of re-deriving the Hijri day/month from
+    // `sortDate` via a different calendar (Umm-al-Qura), which can disagree
+    // with AlAdhan by a day for moon-sighting-dependent dates and make a
+    // holiday silently drop out of the classification. Optional so old
+    // cached entries (saved before this field existed) still decode.
+    let hijriMonthNumber: Int?
+
+    var id: String {
+        "\(title)-\(gregorianReadable)-\(hijriDay)-\(hijriMonth)-\(hijriYear)"
+    }
 }

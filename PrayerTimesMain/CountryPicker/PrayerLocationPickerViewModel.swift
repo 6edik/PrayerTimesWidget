@@ -8,6 +8,11 @@ final class PrayerLocationPickerViewModel: NSObject, ObservableObject {
     struct DetectedPlace: Equatable {
         let city: String
         let countryName: String
+        // The actual GPS fix used to resolve this place — kept separately
+        // from the reverse-geocoded name/country text so callers can send
+        // AlAdhan the real coordinate instead of an address string for it
+        // to re-geocode itself.
+        let coordinate: GeoCoordinate
     }
 
     @Published var detectedPlace: DetectedPlace?
@@ -63,7 +68,11 @@ final class PrayerLocationPickerViewModel: NSObject, ObservableObject {
 
                 detectedPlace = DetectedPlace(
                     city: normalized(city),
-                    countryName: normalized(countryName)
+                    countryName: normalized(countryName),
+                    coordinate: GeoCoordinate(
+                        latitude: location.coordinate.latitude,
+                        longitude: location.coordinate.longitude
+                    )
                 )
             } else {
                 let placemarks = try await CLGeocoder().reverseGeocodeLocation(location)
@@ -91,7 +100,11 @@ final class PrayerLocationPickerViewModel: NSObject, ObservableObject {
 
                 detectedPlace = DetectedPlace(
                     city: normalized(city),
-                    countryName: normalized(countryName)
+                    countryName: normalized(countryName),
+                    coordinate: GeoCoordinate(
+                        latitude: location.coordinate.latitude,
+                        longitude: location.coordinate.longitude
+                    )
                 )
             }
         } catch {

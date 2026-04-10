@@ -5,6 +5,8 @@ enum PrayerTimesServiceError: LocalizedError {
     case invalidResponse
     case missingRequestedDay
     case emptyCalendar
+    case locationMismatch
+    case missingTimezone
 
     nonisolated var errorDescription: String? {
         switch self {
@@ -16,61 +18,39 @@ enum PrayerTimesServiceError: LocalizedError {
             return "Der gewünschte Tag fehlt im geladenen Kalender."
         case .emptyCalendar:
             return "Der Kalender enthält keine Daten."
+        case .locationMismatch:
+            return "Die Antwort bezieht sich auf einen anderen Ort als angefragt. Bitte erneut versuchen."
+        case .missingTimezone:
+            return "Die Antwort enthält keine gültige Zeitzone."
         }
     }
 }
 
 struct PrayerTimesService {
+    // Requested coordinate vs. the coordinate AlAdhan's response metadata
+    // actually reports back must agree closely — we send an exact
+    // coordinate now (not an address for AlAdhan to geocode itself), so any
+    // real deviation means something went wrong rather than "a nearby
+    // match". This margin (~5.5km) is generous enough for rounding but
+    // tight enough to catch a genuinely wrong location.
+    nonisolated private static let maxPlausibleCoordinateDeviation = 0.05
+
     nonisolated init() {}
 
-    nonisolated func fetchPrayerTimes(settings: PrayerSettings) async throws -> PrayerTimes {
-        let fetchStart = PrayerCachePolicy.fetchStart(from: settings.date)
-
-        let cache = try await fetchPrayerTimesCache(
-            settings: settings,
-            referenceDate: fetchStart,
-            coverageDays: PrayerCachePolicy.totalDays
-        )
-
-        let requestedISO = isoDateString(from: settings.date)
-
-        guard let today = cache.days.first(where: { $0.isoDate == requestedISO })?.times else {
-            throw PrayerTimesServiceError.missingRequestedDay
-        }
-
-        return today
-    }
-
-    nonisolated func fetchPrayerTimesUncached(settings: PrayerSettings) async throws -> PrayerTimes {
-        let fetchStart = PrayerCachePolicy.fetchStart(from: settings.date)
-
-        let cache = try await fetchPrayerTimesCacheUncached(
-            settings: settings,
-            referenceDate: fetchStart,
-            coverageDays: PrayerCachePolicy.totalDays
-        )
-
-        let requestedISO = isoDateString(from: settings.date)
-
-        guard let today = cache.days.first(where: { $0.isoDate == requestedISO })?.times else {
-            throw PrayerTimesServiceError.missingRequestedDay
-        }
-
-        return today
-    }
-    
     nonisolated func fetchPrayerTimesForSingleDayUncached(settings: PrayerSettings) async throws -> PrayerTimes {
         let baseURL = "https://api.aladhan.com/v1"
         let datePath = apiDateString(from: settings.date)
 
-        guard var components = URLComponents(string: "\(baseURL)/timingsByAddress/\(datePath)") else {
+        guard var components = locationAwareComponents(
+            baseURL: baseURL,
+            addressPath: "timingsByAddress/\(datePath)",
+            coordinatePath: "timings/\(datePath)",
+            settings: settings
+        ) else {
             throw PrayerTimesServiceError.invalidURL
         }
 
-        components.queryItems = [
-            URLQueryItem(name: "address", value: settings.address),
-            URLQueryItem(name: "method", value: settings.method.apiValue)
-        ]
+        components.queryItems = queryItems(for: settings)
 
         guard let url = components.url else {
             throw PrayerTimesServiceError.invalidURL
@@ -92,7 +72,9 @@ struct PrayerTimesService {
 
         let decoded = try JSONDecoder().decode(PrayerTimesResponse.self, from: data)
         let item = decoded.data
-        
+
+        try validate(meta: item.meta, against: settings.location)
+
         return PrayerTimes(
             fajr: cleanTime(item.timings.fajr),
             shuruk: cleanTime(item.timings.sunrise),
@@ -107,7 +89,7 @@ struct PrayerTimesService {
             timezone: item.meta.timezone,
         )
     }
-    
+
     nonisolated private func apiDateString(from date: Date) -> String {
         let formatter = DateFormatter()
         formatter.calendar = Calendar(identifier: .gregorian)
@@ -122,33 +104,6 @@ struct PrayerTimesService {
         referenceDate: Date = Date(),
         coverageDays: Int = PrayerCachePolicy.totalDays
     ) async throws -> PrayerTimesCache {
-        try await fetchPrayerTimesCache(
-            settings: settings,
-            referenceDate: referenceDate,
-            coverageDays: coverageDays,
-            uncached: false
-        )
-    }
-
-    nonisolated func fetchPrayerTimesCacheUncached(
-        settings: PrayerSettings,
-        referenceDate: Date = Date(),
-        coverageDays: Int = PrayerCachePolicy.totalDays
-    ) async throws -> PrayerTimesCache {
-        try await fetchPrayerTimesCache(
-            settings: settings,
-            referenceDate: referenceDate,
-            coverageDays: coverageDays,
-            uncached: true
-        )
-    }
-
-    nonisolated private func fetchPrayerTimesCache(
-        settings: PrayerSettings,
-        referenceDate: Date,
-        coverageDays: Int,
-        uncached: Bool
-    ) async throws -> PrayerTimesCache {
         let calendar = Calendar(identifier: .gregorian)
         let start = calendar.startOfDay(for: referenceDate)
         let end = calendar.date(byAdding: .day, value: coverageDays - 1, to: start) ?? start
@@ -161,8 +116,7 @@ struct PrayerTimesService {
             let monthDays = try await fetchCalendarMonth(
                 year: month.year,
                 month: month.month,
-                settings: settings,
-                uncached: uncached
+                settings: settings
             )
             allDays.append(contentsOf: monthDays)
         }
@@ -170,57 +124,56 @@ struct PrayerTimesService {
         let startISO = isoDateString(from: start)
         let endISO = isoDateString(from: end)
 
-        let filtered = allDays
-            .filter { $0.isoDate >= startISO && $0.isoDate <= endISO }
+        // The calendar endpoint always returns whole months, so days
+        // outside the required [start, end] window are already paid for
+        // by the same requests — keep all of them instead of discarding
+        // them. That extends the widget/app's future coverage (and
+        // therefore delays the next refetch) "for free", and never costs
+        // an extra request: the set of months fetched above is unchanged.
+        let deduplicatedDays = Dictionary(grouping: allDays, by: \.isoDate)
+            .compactMap { $0.value.first }
             .sorted { $0.isoDate < $1.isoDate }
 
-        guard !filtered.isEmpty else {
+        let coversRequiredWindow = deduplicatedDays.contains {
+            $0.isoDate >= startISO && $0.isoDate <= endISO
+        }
+
+        guard coversRequiredWindow else {
             throw PrayerTimesServiceError.emptyCalendar
         }
 
         return PrayerTimesCache(
-            addressKey: normalizedAddress(settings.address),
+            locationKey: LocationKey.key(address: settings.address, location: settings.location),
             methodKey: String(describing: settings.method),
             fetchedAt: Date(),
-            days: filtered
+            days: deduplicatedDays
         )
     }
 
     nonisolated private func fetchCalendarMonth(
         year: Int,
         month: Int,
-        settings: PrayerSettings,
-        uncached: Bool
+        settings: PrayerSettings
     ) async throws -> [PrayerDay] {
         let baseURL = "https://api.aladhan.com/v1"
 
-        guard var components = URLComponents(string: "\(baseURL)/calendarByAddress/\(year)/\(month)") else {
+        guard var components = locationAwareComponents(
+            baseURL: baseURL,
+            addressPath: "calendarByAddress/\(year)/\(month)",
+            coordinatePath: "calendar/\(year)/\(month)",
+            settings: settings
+        ) else {
             throw PrayerTimesServiceError.invalidURL
         }
 
-        components.queryItems = [
-            URLQueryItem(name: "address", value: settings.address),
-            URLQueryItem(name: "method", value: settings.method.apiValue)
-        ]
+        components.queryItems = queryItems(for: settings)
 
         guard let url = components.url else {
             throw PrayerTimesServiceError.invalidURL
         }
 
-        var request = URLRequest(url: url)
-        request.cachePolicy = uncached ? .reloadIgnoringLocalCacheData : .useProtocolCachePolicy
-
-        let session: URLSession
-        if uncached {
-            let configuration = URLSessionConfiguration.ephemeral
-            configuration.requestCachePolicy = .reloadIgnoringLocalCacheData
-            configuration.urlCache = nil
-            session = URLSession(configuration: configuration)
-        } else {
-            session = URLSession.shared
-        }
-
-        let (data, response) = try await session.data(for: request)
+        let request = URLRequest(url: url)
+        let (data, response) = try await URLSession.shared.data(for: request)
 
         guard let http = response as? HTTPURLResponse, 200..<300 ~= http.statusCode else {
             throw PrayerTimesServiceError.invalidResponse
@@ -231,6 +184,10 @@ struct PrayerTimesService {
         do {
             decoded = try JSONDecoder().decode(PrayerCalendarResponse.self, from: data)
         } catch let error as DecodingError {
+            #if DEBUG
+            // Structural decode diagnostics only (coding path, expected
+            // type) — never the request address/settings. Gated behind
+            // DEBUG so it doesn't spam the console in release builds.
             switch error {
             case .typeMismatch(let type, let context):
                 print("TYPE MISMATCH:", type)
@@ -255,19 +212,31 @@ struct PrayerTimesService {
             @unknown default:
                 print("UNKNOWN DECODING ERROR:", error)
             }
+            #endif
 
             throw error
         } catch {
+            #if DEBUG
             print("OTHER DECODE ERROR:", error)
+            #endif
             throw error
+        }
+
+        if let firstDay = decoded.data.first {
+            try validate(meta: firstDay.meta, against: settings.location)
         }
 
         return await withTaskGroup(of: PrayerDay.self) { group in
             for item in decoded.data {
                 group.addTask {
-                    
+
                     return PrayerDay(
                         isoDate: self.gregorianAPIToISO(item.date.gregorian.date),
+                        hijri: HijriDay(
+                            day: item.date.hijri.day,
+                            month: item.date.hijri.month.en,
+                            year: item.date.hijri.year
+                        ),
                         times: PrayerTimes(
                             fajr: self.cleanTime(item.timings.fajr),
                             shuruk: self.cleanTime(item.timings.sunrise),
@@ -279,15 +248,69 @@ struct PrayerTimesService {
                             readableDay: item.date.gregorian.weekday.en,
                             hijriDate: item.date.hijri.date,
                             hijriDay: item.date.hijri.weekday.ar ?? item.date.hijri.weekday.en,
-                            timezone: item.meta.timezone,
+                            timezone: item.meta.timezone
                         )
-                    )
-                }
+                    )                }
             }
-            
+
             return await group.reduce(into: [PrayerDay]()) { result, day in
                 result.append(day)
             }
+        }
+    }
+
+    /// Builds the request URL for either the coordinate-based endpoint
+    /// (when `settings.location` has a plausible coordinate) or the
+    /// existing address-based endpoint otherwise. Address-based stays the
+    /// fallback for legacy settings (saved before locations were tracked)
+    /// and free-text addresses the app can't resolve to a coordinate
+    /// itself — never a coordinate guessed from the name.
+    nonisolated private func locationAwareComponents(
+        baseURL: String,
+        addressPath: String,
+        coordinatePath: String,
+        settings: PrayerSettings
+    ) -> URLComponents? {
+        let path = usesCoordinate(settings) ? coordinatePath : addressPath
+        return URLComponents(string: "\(baseURL)/\(path)")
+    }
+
+    nonisolated private func queryItems(for settings: PrayerSettings) -> [URLQueryItem] {
+        if usesCoordinate(settings), let location = settings.location {
+            return [
+                URLQueryItem(name: "latitude", value: String(location.coordinate.latitude)),
+                URLQueryItem(name: "longitude", value: String(location.coordinate.longitude)),
+                URLQueryItem(name: "method", value: settings.method.apiValue)
+            ]
+        }
+
+        return [
+            URLQueryItem(name: "address", value: settings.address),
+            URLQueryItem(name: "method", value: settings.method.apiValue)
+        ]
+    }
+
+    nonisolated private func usesCoordinate(_ settings: PrayerSettings) -> Bool {
+        settings.location?.coordinate.isPlausible == true
+    }
+
+    /// Decision 6: never silently trust AlAdhan for a place name, but do
+    /// verify its response metadata actually corresponds to the coordinate
+    /// we asked for — if it clearly doesn't (or the timezone is missing),
+    /// treat that as an error instead of quietly showing wrong times.
+    nonisolated private func validate(meta: PrayerMeta, against location: PrayerLocation?) throws {
+        guard meta.timezone.trimmingCharacters(in: .whitespaces).isEmpty == false else {
+            throw PrayerTimesServiceError.missingTimezone
+        }
+
+        guard let location, location.coordinate.isPlausible else { return }
+
+        let latDelta = abs(meta.latitude - location.coordinate.latitude)
+        let lonDelta = abs(meta.longitude - location.coordinate.longitude)
+
+        guard latDelta <= Self.maxPlausibleCoordinateDeviation,
+              lonDelta <= Self.maxPlausibleCoordinateDeviation else {
+            throw PrayerTimesServiceError.locationMismatch
         }
     }
 
@@ -341,11 +364,5 @@ struct PrayerTimesService {
         formatter.timeZone = .current
         formatter.dateFormat = "yyyy-MM-dd"
         return formatter.string(from: date)
-    }
-
-    nonisolated private func normalizedAddress(_ address: String) -> String {
-        address
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-            .lowercased()
     }
 }

@@ -15,6 +15,13 @@ struct PrayerSettingsView: View {
     @State private var method: PrayerCalculationMethod = .ditib
     @State private var cityInputMode: CityInputMode = .manual
 
+    // Coordinate for `selectedCityFromPicker`, set only by CityPickerView's
+    // own selection — never guessed from the name.
+    @State private var pickerCoordinate: GeoCoordinate?
+    // Coordinate for `manualCity`, set only when it currently reflects a
+    // live GPS fix (cleared as soon as the text is hand-edited).
+    @State private var manualCoordinate: GeoCoordinate?
+
     @State private var fajrAdjustment = 0
     @State private var shurukAdjustment = 0
     @State private var dhuhrAdjustment = 0
@@ -24,6 +31,8 @@ struct PrayerSettingsView: View {
 
     @State private var didLoadInitialValues = false
     @State private var isApplyingCurrentLocation = false
+    
+    @State private var showClearCacheDialog = false
 
     private var isGermanySelected: Bool {
         selectedCountryCode.uppercased() == "DE"
@@ -35,6 +44,19 @@ struct PrayerSettingsView: View {
             return selectedCityFromPicker.trimmingCharacters(in: .whitespacesAndNewlines)
         case .manual:
             return manualCity.trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+    }
+
+    /// The coordinate for `effectiveCity`, if one is actually confirmed —
+    /// from the city list or a live GPS fix. `nil` for hand-typed text, so
+    /// the request falls back to the existing address-based endpoint
+    /// instead of a guessed coordinate.
+    private var effectiveCoordinate: GeoCoordinate? {
+        switch cityInputMode {
+        case .picker:
+            return pickerCoordinate
+        case .manual:
+            return manualCoordinate
         }
     }
 
@@ -79,7 +101,7 @@ struct PrayerSettingsView: View {
 
                     if cityInputMode == .picker && isGermanySelected {
                         NavigationLink {
-                            CityPickerView(selection: $selectedCityFromPicker)
+                            CityPickerView(selection: $selectedCityFromPicker, selectedCoordinate: $pickerCoordinate)
                         } label: {
                             HStack {
                                 Text("Stadt")
@@ -133,6 +155,27 @@ struct PrayerSettingsView: View {
                 Section("Hinweis") {
                     Text("Die API-Werte bleiben im Cache unverändert. Die Minuten-Justierung wird erst bei der Anzeige in App und Widget angewendet.")
                         .foregroundStyle(.secondary)
+                    
+                    Button(role: .destructive) {
+                        showClearCacheDialog = true
+                    } label: {
+                        Label("Gesamten Cache löschen", systemImage: "trash")
+                            .frame(maxWidth: .infinity, alignment: .center)
+                    }
+                    .padding(.top, 8)
+                    .confirmationDialog(
+                        "Gesamten Cache löschen?",
+                        isPresented: $showClearCacheDialog,
+                        titleVisibility: .visible
+                    ) {
+                        Button("Cache löschen", role: .destructive) {
+                            CacheResetService.clearAllCaches()
+                        }
+
+                        Button("Abbrechen", role: .cancel) { }
+                    } message: {
+                        Text("Dadurch werden alle gespeicherten Gebetszeiten- und Kalenderdaten entfernt.")
+                    }
                 }
             }
             .toolbar {
@@ -150,8 +193,13 @@ struct PrayerSettingsView: View {
                             .filter { !$0.isEmpty }
                             .joined(separator: ", ")
 
+                        let location = effectiveCoordinate.map {
+                            PrayerLocation(name: address, coordinate: $0)
+                        }
+
                         viewModel.saveSettings(
                             address: address,
+                            location: location,
                             method: method,
                             adjustments: adjustments
                         )
@@ -208,6 +256,15 @@ struct PrayerSettingsView: View {
                 } else {
                     cityInputMode = .manual
                 }
+
+                // Restore whichever coordinate slot matches the mode we
+                // just resolved into, so a previously coordinate-confirmed
+                // location isn't silently downgraded to address-only.
+                if cityInputMode == .picker {
+                    pickerCoordinate = viewModel.autoSettings.location?.coordinate
+                } else {
+                    manualCoordinate = viewModel.autoSettings.location?.coordinate
+                }
             }
             .onChange(of: selectedCountryCode) { oldValue, newValue in
                 guard oldValue != newValue else { return }
@@ -219,11 +276,17 @@ struct PrayerSettingsView: View {
                 guard !oldValue.isEmpty, !isApplyingCurrentLocation else { return }
 
                 selectedCityFromPicker = ""
+                pickerCoordinate = nil
+            }
+            .onChange(of: manualCity) { _, _ in
+                guard !isApplyingCurrentLocation else { return }
+                manualCoordinate = nil
             }
             .onReceive(locationHelper.$detectedPlace) { place in
                 guard isApplyingCurrentLocation, let place else { return }
 
                 manualCity = place.city
+                manualCoordinate = place.coordinate
                 selectedCityFromPicker = place.city
                 cityInputMode = .manual
 

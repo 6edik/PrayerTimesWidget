@@ -3,6 +3,10 @@ import SwiftUI
 struct CityPickerView: View {
     @Environment(\.dismiss) private var dismiss
     @Binding var selection: String
+    // Optional so existing call sites that only care about the name keep
+    // compiling unchanged; callers that need the coordinate (for
+    // coordinate-based AlAdhan requests) pass a binding for it too.
+    var selectedCoordinate: Binding<GeoCoordinate?>?
 
     @StateObject private var viewModel = CityPickerViewModel()
 
@@ -40,6 +44,13 @@ struct CityPickerView: View {
                     List(viewModel.filteredCities) { city in
                         Button {
                             selection = city.name
+
+                            if let lat = city.latitude, let lon = city.longitude {
+                                selectedCoordinate?.wrappedValue = GeoCoordinate(latitude: lat, longitude: lon)
+                            } else {
+                                selectedCoordinate?.wrappedValue = nil
+                            }
+
                             dismiss()
                         } label: {
                             VStack(alignment: .leading, spacing: 4) {

@@ -9,6 +9,7 @@ struct StatisticsView: View {
     @State private var stats = RefreshStats.empty
     @State private var settings = PrayerSettings(
         address: "--",
+        location: nil,
         date: Date(),
         method: PrayerCalculationMethod.ditib
     )
