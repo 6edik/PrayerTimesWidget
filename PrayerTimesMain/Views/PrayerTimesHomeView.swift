@@ -1,15 +1,13 @@
 import SwiftUI
-import WidgetKit
 
 struct PrayerTimesHomeView: View {
     @Environment(\.scenePhase) private var scenePhase
 
-    private let service = PrayerTimesService()
     private let store = SharedPrayerTimesStore()
     private let settingsStore = SharedPrayerSettingsStore()
-    private let statsStore = RefreshStatsStore()
+    private let refreshCoordinator = PrayerRefreshCoordinator()
 
-    @State private var prayerTimes = PrayerTimes(
+    private static let placeholderTimes = PrayerTimes(
         fajr: "--:--",
         shuruk: "--:--",
         dhuhr: "--:--",
@@ -22,6 +20,8 @@ struct PrayerTimesHomeView: View {
         hijriDay: "--",
         timezone: "--",
     )
+
+    @State private var prayerTimes = PrayerTimesHomeView.placeholderTimes
 
     @State private var currentAddress = "--"
     @State private var currentMethod = "--"
@@ -52,7 +52,10 @@ struct PrayerTimesHomeView: View {
                 HStack(spacing: 8) {
                     Text(prayerTimes.readableDate)
                     Text("•")
-                    Text(prayerTimes.hijriDate)
+                    // Computed locally via Umm-al-Qura instead of the
+                    // AlAdhan API's own Hijri string, so this always agrees
+                    // with the Islamic-calendar tab and the widget.
+                    Text(HijriDateFormatting.displayText(for: Date()))
                 }
                 .font(.subheadline)
 
@@ -94,7 +97,23 @@ struct PrayerTimesHomeView: View {
                     }
                     .padding()
                     .background(.thinMaterial)
-                    .clipShape(RoundedRectangle(cornerRadius: 12))
+                    .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
+                    .overlay(alignment: .top) {
+                        RoundedRectangle(cornerRadius: 22, style: .continuous)
+                            .stroke(
+                                LinearGradient(
+                                    colors: [
+                                        Color.white.opacity(0.35),
+                                        Color.white.opacity(0.06),
+                                        Color.clear
+                                    ],
+                                    startPoint: .top,
+                                    endPoint: .bottom
+                                ),
+                                lineWidth: 1
+                            )
+                    }
+                    .shadow(color: .black.opacity(0.16), radius: 16, y: 8)
                 }
 
                 if isLoading {
@@ -164,68 +183,54 @@ struct PrayerTimesHomeView: View {
         forceNetwork: Bool = false
     ) async {
         let autoSettings = settingsStore.loadAutoSettings()
-        let settings = settingsStore.loadPrayerSettings(for: Date())
 
         currentAddress = autoSettings.address
         currentMethod = autoSettings.method.title
 
-        if let cachedRawToday = store.load(for: Date(), settings: autoSettings) {
-            prayerTimes = cachedRawToday.applyingAdjustments(autoSettings.adjustments)
-        }
+        // Show whatever is cached for the *current* settings right away.
+        // If there is nothing cached for them (e.g. right after switching
+        // address/method, especially offline), fall back to the placeholder
+        // instead of leaving the previous location's times on screen under
+        // the new address label.
+        applyCachedTimes(autoSettings: autoSettings)
 
-        let shouldFetch =
-            forceNetwork ||
-            !store.hasToday(for: autoSettings, referenceDate: Date()) ||
-            store.needsRefresh(settings: autoSettings, referenceDate: Date(), refreshThresholdDays: 2)
+        let shouldFetch = forceNetwork || refreshCoordinator.needsRefresh(settings: autoSettings)
 
         guard shouldFetch else {
             errorMessage = nil
-            statsStore.setNextPlannedRefresh(
-                store.suggestedRefreshDate(settings: autoSettings, refreshThresholdDays: 2)
-            )
             return
         }
 
         isLoading = true
         errorMessage = nil
-        statsStore.markAttempt(source: source)
 
-        do {
-            let fetchStart = PrayerCachePolicy.fetchStart(from: settings.date)
+        let outcome = await refreshCoordinator.refreshIfNeeded(
+            settings: autoSettings,
+            source: source,
+            forceNetwork: forceNetwork
+        )
 
-            let cache = try await service.fetchPrayerTimesCache(
-                settings: settings,
-                referenceDate: fetchStart,
-                coverageDays: PrayerCachePolicy.totalDays
-            )
-
-            store.replaceCache(with: cache)
-
-            if let rawToday = store.load(for: Date(), settings: autoSettings) {
-                prayerTimes = rawToday.applyingAdjustments(autoSettings.adjustments)
-            }
-
-            saveLastRefreshDate()
-            statsStore.markSuccess(source: source)
-            statsStore.incrementWidgetReloadCount()
-            statsStore.setNextPlannedRefresh(
-                store.suggestedRefreshDate(settings: autoSettings, refreshThresholdDays: 2)
-            )
-
-            WidgetCenter.shared.reloadTimelines(ofKind: AppGroup.widgetKind)
-        } catch {
-            if let cachedRawToday = store.load(for: Date(), settings: autoSettings) {
-                prayerTimes = cachedRawToday.applyingAdjustments(autoSettings.adjustments)
-            }
-
-            errorMessage = error.localizedDescription
-            statsStore.markFailure(source: source, error: error.localizedDescription)
+        switch outcome {
+        case .success:
+            applyCachedTimes(autoSettings: autoSettings)
+            errorMessage = nil
+        case .failure(let message):
+            applyCachedTimes(autoSettings: autoSettings)
+            errorMessage = message
+        case .skipped, .alreadyInProgressElsewhere:
+            applyCachedTimes(autoSettings: autoSettings)
+            errorMessage = nil
         }
 
         isLoading = false
     }
 
-    private func saveLastRefreshDate() {
-        UserDefaults(suiteName: AppGroup.id)?.set(Date(), forKey: "last_refresh")
+    @MainActor
+    private func applyCachedTimes(autoSettings: AutoPrayerSettings) {
+        if let cachedRawToday = store.load(for: Date(), settings: autoSettings) {
+            prayerTimes = cachedRawToday.applyingAdjustments(autoSettings.adjustments)
+        } else {
+            prayerTimes = Self.placeholderTimes
+        }
     }
 }

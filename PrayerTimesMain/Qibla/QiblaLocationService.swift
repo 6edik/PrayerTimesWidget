@@ -18,8 +18,17 @@ final class QiblaLocationService: NSObject {
         super.init()
 
         manager.delegate = self
-        manager.desiredAccuracy = kCLLocationAccuracyBest
-        manager.headingFilter = kCLHeadingFilterNone
+        // "Best" can make the one-shot requestLocation() wait noticeably
+        // longer for a GPS-grade fix. Qibla bearing barely changes over a
+        // few hundred meters, so a much faster WiFi/cell-assisted fix is
+        // plenty accurate here.
+        manager.desiredAccuracy = kCLLocationAccuracyHundredMeters
+        // kCLHeadingFilterNone delivers a heading update on every tiny
+        // sensor fluctuation (tens of times per second), which was driving
+        // a full SwiftUI re-render of the whole Qibla page each time and
+        // making the UI feel janky. 1° is imperceptible for a compass but
+        // cuts the update rate drastically.
+        manager.headingFilter = 1
         manager.pausesLocationUpdatesAutomatically = true
         manager.activityType = .other
         manager.allowsBackgroundLocationUpdates = false

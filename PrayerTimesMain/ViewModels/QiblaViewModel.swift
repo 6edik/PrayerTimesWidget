@@ -1,6 +1,8 @@
 import Foundation
+import MapKit
 import CoreLocation
 import Combine
+import UIKit
 
 @MainActor
 final class QiblaViewModel: NSObject, ObservableObject {
@@ -19,7 +21,7 @@ final class QiblaViewModel: NSObject, ObservableObject {
 
     private let locationRefreshInterval: TimeInterval = 180
     private let requestDebounceInterval: TimeInterval = 8
-    private let acceptableLocationAccuracy: CLLocationAccuracy = 300
+    private let acceptableLocationAccuracy: CLLocationAccuracy = 500 // 500m statt 300m
 
     override init() {
         self.locationService = QiblaLocationService()
@@ -43,16 +45,30 @@ final class QiblaViewModel: NSObject, ObservableObject {
         }
 
         isRunning = true
-        state.errorMessage = nil
 
-        if locationService.isHeadingAvailable {
-            locationService.startHeadingUpdates()
-        } else {
-            state.errorMessage = "Auf diesem Gerät ist kein Kompass verfügbar."
+        // Sofort letzten bekannten Zustand zeigen
+        if let lastLocation = lastResolvedLocation {
+            updateQibla(from: lastLocation)
         }
 
-        if shouldRequestFreshLocation() {
-            requestFreshLocation()
+        switch locationService.authorizationStatus {
+        case .notDetermined:
+            // Die Systemabfrage soll sofort erscheinen, wenn die Seite
+            // geöffnet wird — der Kompass läuft ohne Freigabe nicht.
+            state.authorizationDenied = false
+            state.errorMessage = nil
+            locationService.requestAuthorizationIfNeeded()
+
+        case .authorizedWhenInUse, .authorizedAlways:
+            state.authorizationDenied = false
+            state.errorMessage = nil
+            startCompassIfAuthorized()
+
+        case .denied, .restricted:
+            state.authorizationDenied = true
+
+        @unknown default:
+            break
         }
     }
 
@@ -66,22 +82,44 @@ final class QiblaViewModel: NSObject, ObservableObject {
     }
 
     func activateLocationAccess() {
-        state.errorMessage = nil
-
         switch locationService.authorizationStatus {
         case .notDetermined:
+            state.errorMessage = nil
             locationService.requestAuthorizationIfNeeded()
 
         case .authorizedWhenInUse, .authorizedAlways:
+            state.errorMessage = nil
+            startCompassIfAuthorized()
             requestFreshLocation(force: true)
 
         case .denied, .restricted:
+            // requestWhenInUseAuthorization() is a no-op once the user has
+            // already decided — the only way forward is Settings.
             state.authorizationDenied = true
-            state.errorMessage = "Standortzugriff wurde nicht erlaubt."
+            openSystemSettings()
 
         @unknown default:
             break
         }
+    }
+
+    private func startCompassIfAuthorized() {
+        guard isAuthorized else { return }
+
+        if locationService.isHeadingAvailable {
+            locationService.startHeadingUpdates()
+        } else {
+            state.errorMessage = "Auf diesem Gerät ist kein Kompass verfügbar."
+        }
+
+        if shouldRequestFreshLocation() {
+            requestFreshLocation()
+        }
+    }
+
+    private func openSystemSettings() {
+        guard let url = URL(string: UIApplication.openSettingsURLString) else { return }
+        UIApplication.shared.open(url)
     }
 
     func refreshCurrentLocation() {
@@ -142,14 +180,20 @@ final class QiblaViewModel: NSObject, ObservableObject {
         switch locationService.authorizationStatus {
         case .authorizedAlways, .authorizedWhenInUse:
             state.authorizationDenied = false
+            state.errorMessage = nil
 
             if isRunning {
+                startCompassIfAuthorized()
                 requestFreshLocation(force: true)
             }
 
         case .denied, .restricted:
+            // Also covers the case where access is revoked in Settings
+            // while this screen is open — the compass must stop right away.
             state.authorizationDenied = true
-            state.errorMessage = "Standortzugriff wurde nicht erlaubt."
+            state.errorMessage = nil
+            needleAnimator.stop()
+            locationService.stopAllUpdates()
 
         case .notDetermined:
             break
@@ -161,19 +205,36 @@ final class QiblaViewModel: NSObject, ObservableObject {
 
     private func updateQibla(from location: CLLocation) {
         guard location.horizontalAccuracy >= 0 else { return }
-        guard location.horizontalAccuracy <= 150 else { return }
+        // Was a fixed 150m — stricter than `acceptableLocationAccuracy`
+        // (the threshold used everywhere else to decide "good enough").
+        // That mismatch made the first (often coarser, faster) fix get
+        // silently discarded, so the UI kept showing "Standort wird
+        // ermittelt…" longer than necessary while waiting for a better fix.
+        guard location.horizontalAccuracy <= acceptableLocationAccuracy else { return }
 
         lastResolvedLocation = location
 
         state.qiblaBearing = QiblaCalculator.bearing(from: location.coordinate)
-        state.distanceToKaabaKm = QiblaCalculator.distance(from: location.coordinate)
+        //state.distanceToKaabaKm = QiblaCalculator.distance(from: location.coordinate)
         state.coordinateLabel = Self.coordinateText(for: location.coordinate)
 
+        let distance = QiblaCalculator.distance(from: location.coordinate)
+        
+        state.distanceToKaabaKm = distance
+        state.distanceText = formatDistance(distance * 1000)
+        
         guard shouldRefreshCityLabel(for: location) else { return }
 
         Task {
             await updateCityLabel(for: location)
         }
+    }
+    
+    private func formatDistance(_ meters: Double) -> String {
+        let formatter = MKDistanceFormatter()
+        formatter.unitStyle = .abbreviated
+        formatter.units = .metric // oder .default für lokalen Standard
+        return formatter.string(fromDistance: meters)
     }
 
     private func shouldRefreshCityLabel(for location: CLLocation) -> Bool {
@@ -183,7 +244,7 @@ final class QiblaViewModel: NSObject, ObservableObject {
             return true
         }
 
-        return location.distance(from: lastGeocodedLocation) >= 250
+        return location.distance(from: lastGeocodedLocation) >= 1000 // 1 km statt 250m
     }
 
     private func updateCityLabel(for location: CLLocation) async {

@@ -30,3 +30,23 @@ struct AppPageHeader: View {
         .frame(height: 30)
     }
 }
+
+extension View {
+    func glassCard(cornerRadius: CGFloat) -> some View {
+        self
+            .background(.ultraThinMaterial)
+            .overlay(
+                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                    .stroke(Color.black.opacity(0.04), lineWidth: 1)
+            )
+            .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+    }
+    
+    func glassBackground(cornerRadius: CGFloat) -> some View {
+        self
+            .background(
+                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                    .fill(Color.white.opacity(0.04))
+            )
+    }
+}

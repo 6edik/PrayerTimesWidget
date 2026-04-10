@@ -7,7 +7,7 @@
 		<key>PrayerTimesMain.xcscheme_^#shared#^_</key>
 		<dict>
 			<key>orderHint</key>
-			<integer>0</integer>
+			<integer>1</integer>
 		</dict>
 		<key>PrayerTimesWidget.xcscheme_^#shared#^_</key>
 		<dict>
@@ -32,6 +32,11 @@
 	</dict>
 	<key>SuppressBuildableAutocreation</key>
 	<dict>
+		<key>A34A73B03068263000287380</key>
+		<dict>
+			<key>primary</key>
+			<true/>
+		</dict>
 		<key>A34DD12B2F5F104800172E56</key>
 		<dict>
 			<key>primary</key>

@@ -12,6 +12,13 @@ struct ManualQueryView: View {
     @State private var selectedCountryCode = ""
     @State private var cityInputMode: CityInputMode = .manual
 
+    // Coordinate for `selectedCityFromPicker`, set only by CityPickerView's
+    // own selection — never guessed from the name.
+    @State private var pickerCoordinate: GeoCoordinate?
+    // Coordinate for `manualCity`, set only when it currently reflects a
+    // live GPS fix (cleared as soon as the text is hand-edited).
+    @State private var manualCoordinate: GeoCoordinate?
+
     @State private var isApplyingCurrentLocation = false
     @State private var didLoadInitialValues = false
 
@@ -39,6 +46,23 @@ struct ManualQueryView: View {
         return [city, countryName]
             .filter { !$0.isEmpty }
             .joined(separator: ", ")
+    }
+
+    /// The coordinate for `effectiveCity`, if one is actually confirmed —
+    /// from the city list or a live GPS fix. `nil` for hand-typed text, so
+    /// the request falls back to the existing address-based endpoint
+    /// instead of a guessed coordinate.
+    private var effectiveCoordinate: GeoCoordinate? {
+        switch cityInputMode {
+        case .picker:
+            return pickerCoordinate
+        case .manual:
+            return manualCoordinate
+        }
+    }
+
+    private var effectiveLocation: PrayerLocation? {
+        effectiveCoordinate.map { PrayerLocation(name: effectiveAddress, coordinate: $0) }
     }
 
     var body: some View {
@@ -73,7 +97,7 @@ struct ManualQueryView: View {
 
                     if cityInputMode == .picker && isGermanySelected {
                         NavigationLink {
-                            CityPickerView(selection: $selectedCityFromPicker)
+                            CityPickerView(selection: $selectedCityFromPicker, selectedCoordinate: $pickerCoordinate)
                         } label: {
                             HStack {
                                 Text("Stadt")
@@ -119,7 +143,7 @@ struct ManualQueryView: View {
                         
                         Button("Zeiten laden") {
                             Task {
-                                await viewModel.runQuery(address: effectiveAddress)
+                                await viewModel.runQuery(address: effectiveAddress, location: effectiveLocation)
                             }
                         }
                         .frame(maxWidth: .infinity, alignment: .trailing)
@@ -146,7 +170,7 @@ struct ManualQueryView: View {
                             HStack{
                                 Text(result.date.formatted(date: .abbreviated, time: .omitted))
                                     .frame(maxWidth: .infinity, alignment: .leading)
-                                Text(result.times.hijriDate)
+                                Text(result.displayTimes.hijriDate)
                                     .frame(maxWidth: .infinity, alignment: .trailing)
                             }
                             .foregroundStyle(.secondary)
@@ -154,19 +178,25 @@ struct ManualQueryView: View {
                             HStack{
                                 Text(result.method.title)
                                     .frame(maxWidth: .infinity, alignment: .leading)
-                                Text(result.times.timezone)
+                                Text(result.displayTimes.timezone)
                                     .frame(maxWidth: .infinity, alignment: .trailing)
                             }
                             .foregroundStyle(.secondary)
 
+                            if result.hasAppliedAdjustments {
+                                Label("Persönliche Justierung angewendet", systemImage: "slider.horizontal.3")
+                                    .font(.caption)
+                                    .foregroundStyle(.orange)
+                            }
+
                             Divider()
 
-                            row("Fajr", result.times.fajr)
-                            row("Shuruk", result.times.shuruk)
-                            row("Dhuhr", result.times.dhuhr)
-                            row("Asr", result.times.asr)
-                            row("Maghrib", result.times.maghrib)
-                            row("Isha", result.times.isha)
+                            row("Fajr", result.displayTimes.fajr)
+                            row("Shuruk", result.displayTimes.shuruk)
+                            row("Dhuhr", result.displayTimes.dhuhr)
+                            row("Asr", result.displayTimes.asr)
+                            row("Maghrib", result.displayTimes.maghrib)
+                            row("Isha", result.displayTimes.isha)
                         }
                     }
                 }
@@ -220,6 +250,14 @@ struct ManualQueryView: View {
                         }
 
                         cityInputMode = isGermanySelected && !selectedCityFromPicker.isEmpty ? .picker : .manual
+
+                        if cityInputMode == .picker {
+                            pickerCoordinate = viewModel.query.location?.coordinate
+                            manualCoordinate = nil
+                        } else {
+                            manualCoordinate = viewModel.query.location?.coordinate
+                            pickerCoordinate = nil
+                        }
                     } label: {
                         Label("Auto-Werte", systemImage: "arrow.counterclockwise")
                     }
@@ -257,6 +295,15 @@ struct ManualQueryView: View {
                 } else {
                     cityInputMode = .manual
                 }
+
+                // Restore whichever coordinate slot matches the mode we
+                // just resolved into, so a previously coordinate-confirmed
+                // location isn't silently downgraded to address-only.
+                if cityInputMode == .picker {
+                    pickerCoordinate = viewModel.query.location?.coordinate
+                } else {
+                    manualCoordinate = viewModel.query.location?.coordinate
+                }
             }
             .onChange(of: selectedCountryCode) { oldValue, newValue in
                 guard oldValue != newValue else { return }
@@ -267,12 +314,18 @@ struct ManualQueryView: View {
 
                 if !oldValue.isEmpty, oldValue != newValue, !isApplyingCurrentLocation {
                     selectedCityFromPicker = ""
+                    pickerCoordinate = nil
                 }
+            }
+            .onChange(of: manualCity) { _, _ in
+                guard !isApplyingCurrentLocation else { return }
+                manualCoordinate = nil
             }
             .onReceive(locationHelper.$detectedPlace) { place in
                 guard isApplyingCurrentLocation, let place else { return }
 
                 manualCity = place.city
+                manualCoordinate = place.coordinate
                 selectedCityFromPicker = place.city
                 cityInputMode = .manual
 

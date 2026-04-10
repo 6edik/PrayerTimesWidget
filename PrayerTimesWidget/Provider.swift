@@ -5,6 +5,7 @@ struct Provider: TimelineProvider {
     private let store = SharedPrayerTimesStore()
     private let settingsStore = SharedPrayerSettingsStore()
     private let statsStore = RefreshStatsStore()
+    private let refreshCoordinator = PrayerRefreshCoordinator()
     private let calendar = Calendar(identifier: .gregorian)
 
     private let fallback = PrayerTimes(
@@ -36,36 +37,14 @@ struct Provider: TimelineProvider {
             let now = Date()
             let settings = settingsStore.loadAutoSettings()
 
-            let shouldFetch =
-                !store.hasFullRange(for: now, settings: settings) ||
-                store.needsRefresh(
+            if refreshCoordinator.needsRefresh(settings: settings, referenceDate: now) {
+                let outcome = await refreshCoordinator.refreshIfNeeded(
                     settings: settings,
-                    referenceDate: now,
-                    refreshThresholdDays: 2
+                    source: .widgetTimeline,
+                    now: now
                 )
 
-            if shouldFetch {
-                statsStore.markAttempt(source: .widgetTimeline)
-
-                do {
-                    try await SharedPrayerCacheRefresher().refresh(
-                        settings: settings,
-                        now: now
-                    )
-
-                    statsStore.markSuccess(source: .widgetTimeline)
-                    statsStore.setNextPlannedRefresh(
-                        store.suggestedRefreshDate(
-                            settings: settings,
-                            refreshThresholdDays: 2
-                        )
-                    )
-                } catch {
-                    statsStore.markFailure(
-                        source: .widgetTimeline,
-                        error: error.localizedDescription
-                    )
-
+                if case .failure = outcome {
                     let retry = now.addingTimeInterval(30 * 60)
                     let entries = buildEntries(from: now, settings: settings)
 
@@ -96,28 +75,49 @@ struct Provider: TimelineProvider {
 
     private func makeEntry(for date: Date, settings: AutoPrayerSettings) -> PrayerEntry {
         let raw = store.load(for: date, settings: settings) ?? fallback
-        let adjusted = raw.applyingAdjustments(settings.adjustments)
+        let adjusted = raw.applyingAdjustmentsWithDayOffsets(settings.adjustments)
+
+        let previousRaw = store.loadPreviousDay(for: date, settings: settings)
+        let previousAdjusted = previousRaw?.applyingAdjustmentsWithDayOffsets(settings.adjustments)
 
         return PrayerEntry(
             date: date,
-            times: adjusted,
-            previousDayTimes: store.loadPreviousDay(for: date, settings: settings)?
-                .applyingAdjustments(settings.adjustments)
+            times: adjusted.times,
+            dayOffsets: adjusted.dayOffsets,
+            previousDayTimes: previousAdjusted?.times,
+            previousDayOffsets: previousAdjusted?.dayOffsets ?? .zero
         )
     }
 
     private func buildEntries(from now: Date, settings: AutoPrayerSettings) -> [PrayerEntry] {
-        var dates: [Date] = [now]
+        var dates: [Date] = [normalizedTimelineDate(now)]
 
         let todayRaw = store.load(for: now, settings: settings) ?? fallback
-        appendPrayerMoments(for: todayRaw.applyingAdjustments(settings.adjustments), base: now, threshold: now, into: &dates)
+        let todayAdjusted = todayRaw.applyingAdjustmentsWithDayOffsets(settings.adjustments)
+
+        appendPrayerMoments(
+            for: todayAdjusted,
+            base: now,
+            threshold: now,
+            into: &dates
+        )
+
+        appendProgressDates(
+            for: todayAdjusted,
+            base: now,
+            threshold: now,
+            stepMinutes: 5,
+            into: &dates
+        )
 
         if let tomorrowStart = nextMidnightRefreshDate(from: now) {
-            dates.append(tomorrowStart)
+            dates.append(normalizedTimelineDate(tomorrowStart))
 
             let tomorrowRaw = store.load(for: tomorrowStart, settings: settings) ?? fallback
+            let tomorrowAdjusted = tomorrowRaw.applyingAdjustmentsWithDayOffsets(settings.adjustments)
+
             appendPrayerMoments(
-                for: tomorrowRaw.applyingAdjustments(settings.adjustments),
+                for: tomorrowAdjusted,
                 base: tomorrowStart,
                 threshold: now,
                 into: &dates
@@ -128,35 +128,73 @@ struct Provider: TimelineProvider {
         return uniqueSortedDates.map { makeEntry(for: $0, settings: settings) }
     }
 
+    private func adjustedMoments(for adjusted: AdjustedPrayerTimes) -> [PrayerTimeAdjuster.AdjustedTime] {
+        [
+            .init(value: adjusted.times.fajr, dayOffset: adjusted.dayOffsets.fajr),
+            .init(value: adjusted.times.shuruk, dayOffset: adjusted.dayOffsets.shuruk),
+            .init(value: adjusted.times.dhuhr, dayOffset: adjusted.dayOffsets.dhuhr),
+            .init(value: adjusted.times.asr, dayOffset: adjusted.dayOffsets.asr),
+            .init(value: adjusted.times.maghrib, dayOffset: adjusted.dayOffsets.maghrib),
+            .init(value: adjusted.times.isha, dayOffset: adjusted.dayOffsets.isha)
+        ]
+    }
+
+    private func appendProgressDates(
+        for adjusted: AdjustedPrayerTimes,
+        base: Date,
+        threshold: Date,
+        stepMinutes: Int,
+        into dates: inout [Date]
+    ) {
+        let sortedMoments = adjustedMoments(for: adjusted)
+            .compactMap { PrayerTimeAdjuster.date(forAdjusted: $0, base: base, calendar: calendar) }
+            .sorted()
+
+        guard let nextMoment = sortedMoments.first(where: { $0 > threshold }) else {
+            return
+        }
+
+        var cursor = nextFiveMinuteMark(after: threshold, stepMinutes: stepMinutes)
+
+        while cursor < nextMoment {
+            dates.append(cursor)
+
+            guard let nextCursor = calendar.date(byAdding: .minute, value: stepMinutes, to: cursor) else {
+                break
+            }
+
+            cursor = normalizedTimelineDate(nextCursor)
+        }
+    }
+
+    private func nextFiveMinuteMark(after date: Date, stepMinutes: Int) -> Date {
+        let normalized = normalizedTimelineDate(date)
+        let minute = calendar.component(.minute, from: normalized)
+        let remainder = minute % stepMinutes
+        let delta = remainder == 0 ? stepMinutes : (stepMinutes - remainder)
+
+        let rounded = calendar.date(byAdding: .minute, value: delta, to: normalized) ?? normalized
+        return normalizedTimelineDate(rounded)
+    }
+
+    private func normalizedTimelineDate(_ date: Date) -> Date {
+        var components = calendar.dateComponents([.year, .month, .day, .hour, .minute], from: date)
+        components.second = 0
+        components.nanosecond = 0
+        return calendar.date(from: components) ?? date
+    }
+
     private func appendPrayerMoments(
-        for times: PrayerTimes,
+        for adjusted: AdjustedPrayerTimes,
         base: Date,
         threshold: Date,
         into dates: inout [Date]
     ) {
-        let prayerMoments = [times.fajr, times.shuruk, times.dhuhr, times.asr, times.maghrib, times.isha]
-
-        for value in prayerMoments {
-            if let date = timeToDate(value, base: base), date > threshold {
-                dates.append(date)
+        for moment in adjustedMoments(for: adjusted) {
+            if let date = PrayerTimeAdjuster.date(forAdjusted: moment, base: base, calendar: calendar), date > threshold {
+                dates.append(normalizedTimelineDate(date))
             }
         }
-    }
-
-    private func timeToDate(_ value: String, base: Date) -> Date? {
-        let parts = value.split(separator: ":")
-        guard
-            parts.count >= 2,
-            let hour = Int(parts[0]),
-            let minute = Int(parts[1])
-        else { return nil }
-
-        return calendar.date(
-            bySettingHour: hour,
-            minute: minute,
-            second: 0,
-            of: base
-        )
     }
 
     private func nextMidnightRefreshDate(from date: Date) -> Date? {

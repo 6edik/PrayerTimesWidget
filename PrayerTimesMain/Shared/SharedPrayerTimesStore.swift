@@ -1,12 +1,29 @@
 import Foundation
 
 struct SharedPrayerTimesStore {
-    private var defaults: UserDefaults? { UserDefaults(suiteName: AppGroup.id) }
-    private let key = "prayer_times_cache_v2"
+    // Defaults to the real App Group suite for every production call site.
+    // Tests can pass a dedicated suite name so they don't read/write the
+    // developer's real cached prayer times.
+    private let suiteName: String
+    private var defaults: UserDefaults? { UserDefaults(suiteName: suiteName) }
+    // v3: the cache is now keyed by confirmed location (coordinate when
+    // available) instead of by address string alone — bumping the storage
+    // key deliberately invalidates any v2 cache instead of trying to
+    // reinterpret its addressKey, which never carried coordinates.
+    private let key = "prayer_times_cache_v3"
     private let calendar = Calendar(identifier: .gregorian)
 
+    init(suiteName: String = AppGroup.id) {
+        self.suiteName = suiteName
+    }
+
     func replaceCache(with cache: PrayerTimesCache) {
-        clear()
+        // A single `set(forKey:)` call is itself atomic, so writing the new
+        // cache directly (without clearing first) avoids a brief window
+        // where readers (app, widget, background task) would see an empty
+        // cache between the clear and the save. saveCache() always writes
+        // the full `days` array for the given key, so no stale data from a
+        // previous address/method can leak through.
         saveCache(cache)
     }
 
@@ -138,7 +155,7 @@ struct SharedPrayerTimesStore {
             .sorted { $0.isoDate < $1.isoDate }
 
         let cleaned = PrayerTimesCache(
-            addressKey: cache.addressKey,
+            locationKey: cache.locationKey,
             methodKey: cache.methodKey,
             fetchedAt: cache.fetchedAt,
             days: uniqueDays
@@ -157,20 +174,13 @@ struct SharedPrayerTimesStore {
     }
 
     private func cacheMatchesSettings(_ cache: PrayerTimesCache, settings: AutoPrayerSettings) -> Bool {
-        let prayerSettings = settings.asPrayerSettings(for: Date())
-        return cache.addressKey == normalizedAddress(prayerSettings.address)
-            && cache.methodKey == String(describing: prayerSettings.method)
+        return cache.locationKey == LocationKey.key(address: settings.address, location: settings.location)
+            && cache.methodKey == String(describing: settings.method)
     }
 
     private func lastAvailableDate(from cache: PrayerTimesCache) -> Date? {
         guard let iso = cache.lastISODate else { return nil }
         return dateFromISO(iso)
-    }
-
-    private func normalizedAddress(_ address: String) -> String {
-        address
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-            .lowercased()
     }
 
     private func isoDateString(from date: Date) -> String {
@@ -189,5 +199,24 @@ struct SharedPrayerTimesStore {
         formatter.timeZone = .current
         formatter.dateFormat = "yyyy-MM-dd"
         return formatter.date(from: iso)
+    }
+    
+    func loadPrayerDay(for date: Date = Date(), settings: AutoPrayerSettings) -> PrayerDay? {
+        let cache = loadValidatedCache(settings: settings)
+        let iso = isoDateString(from: date)
+        return cache.days.first(where: { $0.isoDate == iso })
+    }
+    
+    func loadHijriDay(for date: Date = Date(), settings: AutoPrayerSettings) -> HijriDay? {
+        loadPrayerDay(for: date, settings: settings)?.hijri
+    }
+
+    /// Decodes the cache once and returns all cached days keyed by ISO date.
+    /// Use this instead of calling `loadPrayerDay`/`load` in a loop (e.g. once
+    /// per calendar grid cell), which would otherwise re-decode the full
+    /// cache from UserDefaults for every single day.
+    func loadAllDays(settings: AutoPrayerSettings) -> [String: PrayerDay] {
+        let cache = loadValidatedCache(settings: settings)
+        return Dictionary(uniqueKeysWithValues: cache.days.map { ($0.isoDate, $0) })
     }
 }

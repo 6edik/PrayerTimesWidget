@@ -152,15 +152,11 @@ struct PrayerTimesWidgetView: View {
     }
 
     private func smallHijriHeader() -> String {
-        let raw = entry.times.hijriDate.trimmingCharacters(in: .whitespacesAndNewlines)
-        let parts = hijriDateParts()
-
-        guard parts.count >= 2 else {
-            return raw.uppercased()
-        }
-
-        let day = parts[0]
-        let monthNumber = Int(parts[1]) ?? 0
+        // Computed locally via Umm-al-Qura instead of the AlAdhan API's own
+        // Hijri string, so this always agrees with the Islamic-calendar tab
+        // and the home screen.
+        let (hijriDayNumber, monthNumber) = HijriDateFormatting.dayAndMonth(for: entry.date)
+        let day = String(hijriDayNumber)
         let month: String
 
         switch monthNumber {
@@ -176,7 +172,7 @@ struct PrayerTimesWidgetView: View {
         case 10: month = "SHWL"
         case 11: month = "DHQD"
         case 12: month = "DHHJ"
-        default: month = parts[1].uppercased()
+        default: month = "?"
         }
 
         return "\(day). \(month)"
@@ -536,7 +532,7 @@ struct PrayerTimesWidgetView: View {
     }
 
     private func dayNumber() -> String {
-        hijriDateParts().first ?? "--"
+        HijriDateFormatting.dayText(for: entry.date)
     }
 
     private func resolvedPrayerWindow() -> PrayerWindow {
@@ -547,33 +543,56 @@ struct PrayerTimesWidgetView: View {
         let yesterday = calendar.date(byAdding: .day, value: -1, to: now) ?? now
         let tomorrow = calendar.date(byAdding: .day, value: 1, to: now) ?? now
 
-        let yesterdayTimes = entry.previousDayTimes ?? store.load(for: yesterday, settings: autoSettings)
-        let tomorrowTimes = store.load(for: tomorrow, settings: autoSettings)
-        let tomorrowFajrTime = tomorrowTimes?.fajr ?? entry.times.fajr
+        // entry.previousDayTimes already has the stored adjustments (and
+        // their day offsets) applied by the widget provider. Only fall back
+        // to a fresh cache lookup (and apply the adjustments ourselves) if
+        // the provider didn't have a cached previous day at all.
+        let yesterdayAdjusted: AdjustedPrayerTimes? = entry.previousDayTimes.map {
+            AdjustedPrayerTimes(times: $0, dayOffsets: entry.previousDayOffsets)
+        } ?? store.load(for: yesterday, settings: autoSettings)?
+            .applyingAdjustmentsWithDayOffsets(autoSettings.adjustments)
+
+        let tomorrowAdjusted = store.load(for: tomorrow, settings: autoSettings)?
+            .applyingAdjustmentsWithDayOffsets(autoSettings.adjustments)
 
         var moments: [PrayerMoment] = []
 
-        if let yesterdayIsha = yesterdayTimes?.isha,
-           let yesterdayIshaDate = timeToDate(yesterdayIsha, base: yesterday) {
-            moments.append(.init(name: "Isha", time: yesterdayIsha, date: yesterdayIshaDate))
+        if let yesterdayAdjusted,
+           let yesterdayIshaDate = PrayerTimeAdjuster.date(
+               forAdjusted: .init(value: yesterdayAdjusted.times.isha, dayOffset: yesterdayAdjusted.dayOffsets.isha),
+               base: yesterday,
+               calendar: calendar
+           ) {
+            moments.append(.init(name: "Isha", time: yesterdayAdjusted.times.isha, date: yesterdayIshaDate))
         }
 
-        let todayMoments: [(name: String, time: String)] = [
-            ("Fajr", entry.times.fajr),
-            ("Shuruk", entry.times.shuruk),
-            ("Dhuhr", entry.times.dhuhr),
-            ("Asr", entry.times.asr),
-            ("Maghrib", entry.times.maghrib),
-            ("Isha", entry.times.isha)
+        let todayMoments: [(name: String, time: String, dayOffset: Int)] = [
+            ("Fajr", entry.times.fajr, entry.dayOffsets.fajr),
+            ("Shuruk", entry.times.shuruk, entry.dayOffsets.shuruk),
+            ("Dhuhr", entry.times.dhuhr, entry.dayOffsets.dhuhr),
+            ("Asr", entry.times.asr, entry.dayOffsets.asr),
+            ("Maghrib", entry.times.maghrib, entry.dayOffsets.maghrib),
+            ("Isha", entry.times.isha, entry.dayOffsets.isha)
         ]
 
         for item in todayMoments {
-            if let date = timeToDate(item.time, base: now) {
+            if let date = PrayerTimeAdjuster.date(
+                forAdjusted: .init(value: item.time, dayOffset: item.dayOffset),
+                base: now,
+                calendar: calendar
+            ) {
                 moments.append(.init(name: item.name, time: item.time, date: date))
             }
         }
 
-        if let tomorrowFajrDate = timeToDate(tomorrowFajrTime, base: tomorrow) {
+        let tomorrowFajrTime = tomorrowAdjusted?.times.fajr ?? entry.times.fajr
+        let tomorrowFajrOffset = tomorrowAdjusted?.dayOffsets.fajr ?? 0
+
+        if let tomorrowFajrDate = PrayerTimeAdjuster.date(
+            forAdjusted: .init(value: tomorrowFajrTime, dayOffset: tomorrowFajrOffset),
+            base: tomorrow,
+            calendar: calendar
+        ) {
             moments.append(.init(name: "Fajr", time: tomorrowFajrTime, date: tomorrowFajrDate))
         }
 
@@ -636,25 +655,6 @@ struct PrayerTimesWidgetView: View {
         return min(max(elapsed / total, 0), 1)
     }
 
-    private func timeToDate(_ value: String, base: Date) -> Date? {
-        let parts = value.split(separator: ":")
-
-        guard
-            parts.count >= 2,
-            let hour = Int(parts[0]),
-            let minute = Int(parts[1])
-        else {
-            return nil
-        }
-
-        return Calendar.current.date(
-            bySettingHour: hour,
-            minute: minute,
-            second: 0,
-            of: base
-        )
-    }
-
     private func shortLabel(_ value: String) -> String {
         switch value {
         case "Fajr": return "FJR"
@@ -674,11 +674,6 @@ struct PrayerTimesWidgetView: View {
         }
     }
 
-    private func hijriDateParts() -> [String] {
-        let raw = entry.times.hijriDate.trimmingCharacters(in: .whitespacesAndNewlines)
-        let separators = CharacterSet(charactersIn: "-./ ")
-        return raw.components(separatedBy: separators).filter { !$0.isEmpty }
-    }
 }
 
 extension View {
