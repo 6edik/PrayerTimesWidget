@@ -15,7 +15,6 @@ struct QiblaView: View {
         NavigationStack {
             AppPageContainer {
                 AppPageHeader(title: "Gebetsrichtung")
-
                 headerSection
                 compassSection
 
@@ -49,11 +48,13 @@ struct QiblaView: View {
                     .presentationDetents([.medium, .large])
                     .presentationDragIndicator(.visible)
             }
-            .safeAreaInset(edge: .bottom) {
+            .background(Color.clear)
+            .overlay(alignment: .bottom) {
                 bottomBar
+                    .frame(maxWidth: .infinity)
+                    .padding(.bottom, 10)
             }
         }
-        .background(backgroundGradient.ignoresSafeArea())
         .onAppear {
             alignmentHaptic.prepare()
 
@@ -135,6 +136,11 @@ struct QiblaView: View {
                     .font(.headline)
                     .multilineTextAlignment(.center)
 
+                Text("Entfernung zur Kaaba: \(viewModel.state.distanceText)")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+
                 Text("Kompassbezug: \(viewModel.state.headingReference.label)")
                     .font(.caption)
                     .foregroundStyle(.secondary)
@@ -195,6 +201,7 @@ struct QiblaView: View {
                     lineWidth: 4
                 )
         }
+        .shadow(color: Color.orange.opacity(0.14), radius: 24, y: 8)
         .rotationEffect(.degrees(-viewModel.needleAnimator.displayedHeading))
         .transaction { transaction in
             transaction.animation = nil
@@ -214,36 +221,33 @@ struct QiblaView: View {
     }
 
     private var bottomBar: some View {
-        VStack(spacing: 10) {
-            HStack(spacing: 12) {
-                bottomMetric(title: "Qibla", value: viewModel.state.bearingText)
-                bottomMetric(title: "Gerät", value: viewModel.state.userHeadingText)
-                bottomMetric(title: "Abweich.", value: offsetText)
-            }
-
-            HStack(spacing: 8) {
-                Text(viewModel.state.cityLabel)
-                    .lineLimit(1)
-
-                Text("•")
-                    .foregroundStyle(.tertiary)
-
-                Text(viewModel.state.accuracyText)
-                    .lineLimit(1)
-            }
-            .font(.caption2)
-            .foregroundStyle(.secondary)
+        HStack(spacing: 12) {
+            bottomMetric(title: "Qibla", value: viewModel.state.bearingText)
+            bottomMetric(title: "Gerät", value: viewModel.state.userHeadingText)
+            bottomMetric(title: "Abweich.", value: offsetText)
+            bottomMetric(title: "Genauigk.", value: viewModel.state.accuracyText)
         }
-        .padding(.horizontal, 16)
-        .padding(.top, 12)
-        .padding(.bottom, 12)
-        .frame(maxWidth: .infinity)
-        .background(.ultraThinMaterial)
+        .padding(.horizontal, 18)
+        .padding(.vertical, 14)
+        .frame(maxWidth: 340)
+        .background(.thinMaterial)
+        .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
         .overlay(alignment: .top) {
-            Rectangle()
-                .fill(Color.primary.opacity(0.06))
-                .frame(height: 0.5)
+            RoundedRectangle(cornerRadius: 22, style: .continuous)
+                .stroke(
+                    LinearGradient(
+                        colors: [
+                            Color.white.opacity(0.35),
+                            Color.white.opacity(0.06),
+                            Color.clear
+                        ],
+                        startPoint: .top,
+                        endPoint: .bottom
+                    ),
+                    lineWidth: 1
+                )
         }
+        .shadow(color: .black.opacity(0.16), radius: 16, y: 8)
     }
 
     private func bottomMetric(title: String, value: String) -> some View {

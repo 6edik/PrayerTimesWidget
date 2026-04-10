@@ -1,4 +1,5 @@
 import Foundation
+import MapKit
 import CoreLocation
 import Combine
 
@@ -19,7 +20,7 @@ final class QiblaViewModel: NSObject, ObservableObject {
 
     private let locationRefreshInterval: TimeInterval = 180
     private let requestDebounceInterval: TimeInterval = 8
-    private let acceptableLocationAccuracy: CLLocationAccuracy = 300
+    private let acceptableLocationAccuracy: CLLocationAccuracy = 500 // 500m statt 300m
 
     override init() {
         self.locationService = QiblaLocationService()
@@ -44,6 +45,11 @@ final class QiblaViewModel: NSObject, ObservableObject {
 
         isRunning = true
         state.errorMessage = nil
+
+        // Sofort letzten bekannten Zustand zeigen
+        if let lastLocation = lastResolvedLocation {
+            updateQibla(from: lastLocation)
+        }
 
         if locationService.isHeadingAvailable {
             locationService.startHeadingUpdates()
@@ -166,14 +172,26 @@ final class QiblaViewModel: NSObject, ObservableObject {
         lastResolvedLocation = location
 
         state.qiblaBearing = QiblaCalculator.bearing(from: location.coordinate)
-        state.distanceToKaabaKm = QiblaCalculator.distance(from: location.coordinate)
+        //state.distanceToKaabaKm = QiblaCalculator.distance(from: location.coordinate)
         state.coordinateLabel = Self.coordinateText(for: location.coordinate)
 
+        let distance = QiblaCalculator.distance(from: location.coordinate)
+        
+        state.distanceToKaabaKm = distance
+        state.distanceText = formatDistance(distance * 1000)
+        
         guard shouldRefreshCityLabel(for: location) else { return }
 
         Task {
             await updateCityLabel(for: location)
         }
+    }
+    
+    private func formatDistance(_ meters: Double) -> String {
+        let formatter = MKDistanceFormatter()
+        formatter.unitStyle = .abbreviated
+        formatter.units = .metric // oder .default für lokalen Standard
+        return formatter.string(fromDistance: meters)
     }
 
     private func shouldRefreshCityLabel(for location: CLLocation) -> Bool {
@@ -183,7 +201,7 @@ final class QiblaViewModel: NSObject, ObservableObject {
             return true
         }
 
-        return location.distance(from: lastGeocodedLocation) >= 250
+        return location.distance(from: lastGeocodedLocation) >= 1000 // 1 km statt 250m
     }
 
     private func updateCityLabel(for location: CLLocation) async {

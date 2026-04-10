@@ -18,7 +18,8 @@ enum HeadingReference: String {
 struct QiblaState {
     var qiblaBearing: Double = 0
     var distanceToKaabaKm: Double = 0
-
+    var distanceText: String = "-- km"
+    
     var userHeading: Double = 0
     var headingAccuracy: Double = -1
     var headingReference: HeadingReference = .trueNorth
