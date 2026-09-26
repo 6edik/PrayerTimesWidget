@@ -51,22 +51,6 @@ final class IslamicCalendarViewModel: ObservableObject {
         return calendar
     }
 
-    private struct HijriHolidayKey: Hashable {
-        let day: Int
-        let month: Int
-    }
-
-    private let holidayKeys: Set<HijriHolidayKey> = [
-        .init(day: 8, month: 12),   // Hajj
-        .init(day: 9, month: 12),   // Day of Arafah
-        .init(day: 10, month: 12),  // Eid al-Adha
-        .init(day: 1, month: 1),    // Islamic New Year
-        .init(day: 10, month: 1),   // Ashura
-        .init(day: 27, month: 7),   // Isra’ & Mi’raj
-        .init(day: 1, month: 9),    // Ramadan
-        .init(day: 1, month: 10)    // Eid al-Fitr
-    ]
-
     var sectionTitle: String {
         "Besondere Tage"
     }
@@ -279,36 +263,8 @@ final class IslamicCalendarViewModel: ObservableObject {
 }
 
 extension IslamicCalendarViewModel {
-    private func hijriHolidayKey(for specialDay: IslamicSpecialDay) -> HijriHolidayKey? {
-        // Prefer the Hijri day/month AlAdhan itself reported for this
-        // holiday. Re-deriving day/month from `sortDate` via a *different*
-        // calendar (Umm-al-Qura) risks disagreeing with AlAdhan by a day for
-        // moon-sighting-dependent dates (Ramadan start/end, Eid al-Adha,
-        // Ashura), which would silently drop the holiday out of every
-        // holidayKeys match even though AlAdhan flagged it correctly.
-        if let month = specialDay.hijriMonthNumber, let day = Int(specialDay.hijriDay) {
-            return HijriHolidayKey(day: day, month: month)
-        }
-
-        // Fallback only for cache entries saved before `hijriMonthNumber`
-        // existed; they don't have AlAdhan's own month number persisted, so
-        // fall back to the previous best-effort re-derivation until the
-        // cache is refreshed.
-        let components = hijriCalendar.dateComponents([.day, .month], from: specialDay.sortDate)
-
-        guard let day = components.day, let month = components.month else {
-            return nil
-        }
-
-        return HijriHolidayKey(day: day, month: month)
-    }
-
     private func isHolidayOverviewItem(_ day: IslamicSpecialDay) -> Bool {
-        guard let key = hijriHolidayKey(for: day) else {
-            return false
-        }
-
-        return holidayKeys.contains(key)
+        IslamicHolidayClassifier.isMajorHoliday(day, hijriCalendar: hijriCalendar)
     }
 
     private func mergedDays(for years: [Int]) -> [IslamicSpecialDay] {
@@ -326,7 +282,7 @@ extension IslamicCalendarViewModel {
             .sorted { $0.sortDate < $1.sortDate }
             .filter { item in
                 let gregorianDay = calendar.startOfDay(for: item.sortDate).timeIntervalSince1970
-                let hijriKey = hijriHolidayKey(for: item)
+                let hijriKey = IslamicHolidayClassifier.hijriHolidayKey(for: item, hijriCalendar: hijriCalendar)
                 let key = "\(gregorianDay)-\(hijriKey?.day ?? -1)-\(hijriKey?.month ?? -1)"
                 return seen.insert(key).inserted
             }

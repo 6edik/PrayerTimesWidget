@@ -34,12 +34,14 @@ struct PrayerTimesHomeView: View {
         case settings
         case statistics
         case manualQuery
+        case notifications
 
         var id: Int {
             switch self {
             case .settings: return 1
             case .statistics: return 2
             case .manualQuery: return 3
+            case .notifications: return 4
             }
         }
     }
@@ -143,6 +145,10 @@ struct PrayerTimesHomeView: View {
                         activeSheet = .manualQuery
                     }
 
+                    TopBarActionButton(systemImage: "bell", accessibilityLabel: "Benachrichtigungen") {
+                        activeSheet = .notifications
+                    }
+
                     TopBarActionButton(systemImage: "gearshape", accessibilityLabel: "Einstellungen") {
                         activeSheet = .settings
                     }
@@ -160,6 +166,8 @@ struct PrayerTimesHomeView: View {
                     StatisticsView()
                 case .manualQuery:
                     ManualQueryView()
+                case .notifications:
+                    NotificationSettingsView()
                 }
             }
         }
@@ -214,6 +222,7 @@ struct PrayerTimesHomeView: View {
         case .success:
             applyCachedTimes(autoSettings: autoSettings)
             errorMessage = nil
+            await NotificationScheduler().reschedule()
         case .failure(let message):
             applyCachedTimes(autoSettings: autoSettings)
             errorMessage = message

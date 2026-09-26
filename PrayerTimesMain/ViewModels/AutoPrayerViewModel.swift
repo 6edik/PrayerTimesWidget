@@ -87,6 +87,14 @@ final class AutoPrayerViewModel: ObservableObject {
         if locationChanged || methodChanged || adjustmentsChanged {
             WidgetCenter.shared.reloadAllTimelines()
         }
+
+        // Location/method/adjustment changes all affect when a
+        // notification should fire. If the cache was just cleared above,
+        // this correctly schedules nothing until fresh data arrives —
+        // never a notification with the old location's/adjustment's time.
+        if locationChanged || methodChanged || adjustmentsChanged {
+            Task { await NotificationScheduler().reschedule() }
+        }
     }
 
     func refreshTodayFromAPI() async {
@@ -104,6 +112,8 @@ final class AutoPrayerViewModel: ObservableObject {
 
         if case .failure(let message) = outcome {
             errorMessage = message
+        } else {
+            await NotificationScheduler().reschedule()
         }
 
         isLoading = false
