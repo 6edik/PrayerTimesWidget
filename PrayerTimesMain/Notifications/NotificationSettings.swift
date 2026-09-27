@@ -58,6 +58,23 @@ struct PrayerNotificationSetting: Codable, Equatable {
     var sound: NotificationSoundOption = .standard
 }
 
+/// Reminders for the three voluntary-fasting occasions the app recognizes
+/// (see `VoluntaryFastingClassifier`). Each weekday/White-Days switch is
+/// independent; `minutesAfterMaghrib` controls how long after the *eve's*
+/// Maghrib the single combined reminder fires (never the fasting day's own
+/// Maghrib — see `NotificationScheduler.fastingCandidates`).
+struct VoluntaryFastingNotificationSetting: Codable, Equatable {
+    var monday: Bool = false
+    var thursday: Bool = false
+    var whiteDays: Bool = false
+    var minutesAfterMaghrib: Int = 10
+    var sound: NotificationSoundOption = .standard
+
+    var hasAnyEnabled: Bool {
+        monday || thursday || whiteDays
+    }
+}
+
 struct HolidayNotificationSetting: Codable, Equatable {
     var isEnabled: Bool = false
     var notifyDayBefore: Bool = false
@@ -80,6 +97,8 @@ struct NotificationSettings: Codable, Equatable {
     // Keyed by `MajorIslamicHoliday.rawValue`. Absent entries behave like
     // `HolidayNotificationSetting()` (disabled).
     var holidays: [String: HolidayNotificationSetting] = [:]
+
+    var voluntaryFasting = VoluntaryFastingNotificationSetting()
 
     static let zero = NotificationSettings()
 
@@ -117,5 +136,9 @@ struct NotificationSettings: Codable, Equatable {
 
     var hasAnyHolidayEnabled: Bool {
         MajorIslamicHoliday.allCases.contains { setting(for: $0).isEnabled && !setting(for: $0).isConfigurationUseless }
+    }
+
+    var hasAnyVoluntaryFastingEnabled: Bool {
+        voluntaryFasting.hasAnyEnabled
     }
 }

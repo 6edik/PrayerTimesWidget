@@ -35,6 +35,7 @@ struct PrayerTimesHomeView: View {
         case statistics
         case manualQuery
         case notifications
+        case savedPrayerTimes
 
         var id: Int {
             switch self {
@@ -42,6 +43,7 @@ struct PrayerTimesHomeView: View {
             case .statistics: return 2
             case .manualQuery: return 3
             case .notifications: return 4
+            case .savedPrayerTimes: return 5
             }
         }
     }
@@ -137,10 +139,14 @@ struct PrayerTimesHomeView: View {
             }
             .toolbar {
                 ToolbarItemGroup(placement: .topBarTrailing) {
+                    TopBarActionButton(systemImage: "tray.full", accessibilityLabel: "Gespeicherte Gebetszeiten") {
+                        activeSheet = .savedPrayerTimes
+                    }
+
                     TopBarActionButton(systemImage: "chart.bar", accessibilityLabel: "Statistiken") {
                         activeSheet = .statistics
                     }
-                    
+
                     TopBarActionButton(systemImage: "magnifyingglass", accessibilityLabel: "Manuelle Suche") {
                         activeSheet = .manualQuery
                     }
@@ -168,6 +174,8 @@ struct PrayerTimesHomeView: View {
                     ManualQueryView()
                 case .notifications:
                     NotificationSettingsView()
+                case .savedPrayerTimes:
+                    CachedPrayerTimesView()
                 }
             }
         }

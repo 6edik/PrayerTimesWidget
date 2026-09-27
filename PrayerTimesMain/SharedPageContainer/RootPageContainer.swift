@@ -24,10 +24,13 @@ struct AppPageHeader: View {
     var body: some View {
         VStack(spacing: 3) {
             Text(title)
+                .lineLimit(1)
+                .minimumScaleFactor(0.5)
         }
         .foregroundStyle(Color.orange.opacity(0.95))
         .font(.system(size: 34, weight: .ultraLight, design: .serif))
-        .frame(height: 30)
+        .frame(maxWidth: .infinity, minHeight: 30, maxHeight: 30)
+        .padding(.horizontal, 32)
     }
 }
 

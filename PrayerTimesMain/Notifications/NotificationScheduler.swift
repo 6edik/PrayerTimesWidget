@@ -38,6 +38,7 @@ struct NotificationScheduler {
     // requests among whatever else might be scheduled.
     static let prayerIdentifierPrefix = "com.mertgedik.prayertimes.notif.prayer."
     static let holidayIdentifierPrefix = "com.mertgedik.prayertimes.notif.holiday."
+    static let fastingIdentifierPrefix = "com.mertgedik.prayertimes.notif.fasting."
 
     private let timesStore: SharedPrayerTimesStore
     private let settingsStore: SharedPrayerSettingsStore
@@ -84,7 +85,11 @@ struct NotificationScheduler {
         await removeAllOwnPendingRequests()
 
         let notificationSettings = notificationSettingsStore.load()
-        guard notificationSettings.hasAnyPrayerEnabled || notificationSettings.hasAnyHolidayEnabled else {
+        guard
+            notificationSettings.hasAnyPrayerEnabled
+                || notificationSettings.hasAnyHolidayEnabled
+                || notificationSettings.hasAnyVoluntaryFastingEnabled
+        else {
             return
         }
 
@@ -102,6 +107,10 @@ struct NotificationScheduler {
 
         if notificationSettings.hasAnyHolidayEnabled {
             candidates += await holidayCandidates(settings: notificationSettings, now: now)
+        }
+
+        if notificationSettings.hasAnyVoluntaryFastingEnabled {
+            candidates += fastingCandidates(settings: notificationSettings)
         }
 
         let budget = await remainingBudget()
@@ -251,6 +260,164 @@ struct NotificationScheduler {
         return formatter.string(from: date)
     }
 
+    // MARK: - Voluntary-fasting candidates
+
+    /// Cache-first, single-reminder-per-day scheduling for the app's three
+    /// voluntary-fasting occasions (Monday, Thursday, White Days — see
+    /// `VoluntaryFastingClassifier`).
+    ///
+    /// For every day cached in the shared Auto-Cache (already validated
+    /// against the *current* `AutoPrayerSettings` by `loadAllDays`, so a
+    /// stale cache from a previous city/method never contributes a
+    /// candidate here either — same guarantee `prayerCandidates` relies
+    /// on):
+    /// - classify it using the *location's own* timezone (each cached day
+    ///   carries its own `PrayerTimes.timezone` from the AlAdhan response),
+    ///   never the device's, so a Monday/White-Day decision near local
+    ///   midnight can't be shifted a day by an unrelated device timezone;
+    /// - skip it entirely if fasting is religiously inappropriate that day
+    ///   (Ramadan, the two Eids, or Tashriq — `isExcludedFromVoluntaryFasting`);
+    /// - skip it if none of the *enabled* toggles match;
+    /// - otherwise schedule exactly one reminder, at the previous calendar
+    ///   day's (the "eve's") Maghrib plus the configured offset — a Monday
+    ///   reminder is anchored to Sunday's Maghrib, never Monday's own,
+    ///   which is the whole point of "the evening before". If the eve
+    ///   itself isn't cached (no Maghrib to anchor to), this day is
+    ///   skipped — there is no sane fallback fire time to invent.
+    func fastingCandidates(settings: NotificationSettings, now: Date = Date()) -> [NotificationCandidate] {
+        let fastingSettings = settings.voluntaryFasting
+        guard fastingSettings.hasAnyEnabled else { return [] }
+
+        let autoSettings = settingsStore.loadAutoSettings()
+        let cachedDays = timesStore.loadAllDays(settings: autoSettings)
+        guard !cachedDays.isEmpty else { return [] }
+
+        var result: [NotificationCandidate] = []
+
+        for (iso, day) in cachedDays {
+            guard let dayStart = PrayerMomentResolver.dayStart(
+                isoDate: iso,
+                timezoneIdentifier: day.times.timezone
+            ) else { continue }
+
+            let locationTimeZone = TimeZone(identifier: day.times.timezone) ?? .current
+
+            var gregorian = Calendar(identifier: .gregorian)
+            gregorian.timeZone = locationTimeZone
+            let hijri = HijriDateFormatting.calendar(timeZone: locationTimeZone)
+
+            guard !VoluntaryFastingClassifier.isExcludedFromVoluntaryFasting(date: dayStart, hijriCalendar: hijri) else {
+                continue
+            }
+
+            let matched = VoluntaryFastingClassifier.occasions(for: dayStart, gregorianCalendar: gregorian, hijriCalendar: hijri)
+            var occasions: VoluntaryFastingOccasions = []
+            if fastingSettings.monday, matched.contains(.monday) { occasions.insert(.monday) }
+            if fastingSettings.thursday, matched.contains(.thursday) { occasions.insert(.thursday) }
+            if fastingSettings.whiteDays, matched.contains(.whiteDay) { occasions.insert(.whiteDay) }
+            guard !occasions.isEmpty else { continue }
+
+            guard
+                let eveISO = previousISODate(iso),
+                let eveDay = cachedDays[eveISO],
+                let eveMaghrib = PrayerMomentResolver.resolve(
+                    isoDate: eveISO,
+                    rawTime: eveDay.times.maghrib,
+                    adjustmentMinutes: autoSettings.adjustments.maghrib,
+                    timezoneIdentifier: eveDay.times.timezone
+                )
+            else { continue }
+
+            let fireDate = eveMaghrib.addingTimeInterval(Double(fastingSettings.minutesAfterMaghrib) * 60)
+
+            // The "Fajr X bis Maghrib Y – Z Std." sentence is for the
+            // fasting day itself, computed from full Dates (via
+            // PrayerMomentResolver, so a midnight-crossing adjustment is
+            // handled correctly) rather than a naive HH:mm string diff.
+            // Both the displayed clock times *and* the duration come from
+            // these same resolved Dates — if either fails to resolve (a
+            // malformed stored time, an invalid timezone), the entire
+            // sentence is omitted rather than showing a broken clock time
+            // next to no duration, or inventing either one. The reminder
+            // still fires with just the plain occasion sentence in that
+            // case (documented in the settings UI's "Hinweis" section).
+            let timesSentence: String?
+            if
+                let fajrDate = PrayerMomentResolver.resolve(
+                    isoDate: iso, rawTime: day.times.fajr,
+                    adjustmentMinutes: autoSettings.adjustments.fajr, timezoneIdentifier: day.times.timezone
+                ),
+                let maghribDate = PrayerMomentResolver.resolve(
+                    isoDate: iso, rawTime: day.times.maghrib,
+                    adjustmentMinutes: autoSettings.adjustments.maghrib, timezoneIdentifier: day.times.timezone
+                ),
+                maghribDate > fajrDate
+            {
+                let clockFormatter = DateFormatter()
+                clockFormatter.calendar = gregorian
+                clockFormatter.locale = Locale(identifier: "en_US_POSIX")
+                clockFormatter.timeZone = locationTimeZone
+                clockFormatter.dateFormat = "HH:mm"
+
+                // `duration` already ends in "Std." or "Min." — no extra
+                // trailing period, or the sentence would end in "..".
+                let duration = Self.formattedDuration(from: fajrDate, to: maghribDate)
+                timesSentence = "Voraussichtliche Fastenzeit: Fajr \(clockFormatter.string(from: fajrDate)) bis Maghrib \(clockFormatter.string(from: maghribDate)) – \(duration)"
+            } else {
+                timesSentence = nil
+            }
+
+            result.append(NotificationCandidate(
+                identifier: "\(Self.fastingIdentifierPrefix)\(iso)",
+                fireDate: fireDate,
+                title: "Morgen: freiwilliges Fasten",
+                body: Self.fastingBody(occasions: occasions, timesSentence: timesSentence),
+                sound: fastingSettings.sound
+            ))
+        }
+
+        return result
+    }
+
+    private static func fastingBody(occasions: VoluntaryFastingOccasions, timesSentence: String?) -> String {
+        let occasionSentence = "Morgen ist \(occasions.displayLabel)."
+        guard let timesSentence else { return occasionSentence }
+        return "\(occasionSentence) \(timesSentence)"
+    }
+
+    /// "15 Std. 40 Min." — or just "15 Std." when there are no leftover
+    /// minutes, matching the spec's own example text.
+    private static func formattedDuration(from start: Date, to end: Date) -> String {
+        let totalMinutes = Int((end.timeIntervalSince(start) / 60).rounded())
+        let hours = totalMinutes / 60
+        let minutes = totalMinutes % 60
+        return minutes == 0 ? "\(hours) Std." : "\(hours) Std. \(minutes) Min."
+    }
+
+    /// The ISO ("yyyy-MM-dd") date string one calendar day before `iso`,
+    /// correctly handling month/year rollover. Pure calendar-component
+    /// arithmetic on the date *label* itself — deliberately timezone-
+    /// independent (any fixed zone works as long as parsing and formatting
+    /// use the same one), unlike `PrayerMomentResolver`, which resolves a
+    /// label to a real absolute instant in a specific location's timezone.
+    private func previousISODate(_ iso: String) -> String? {
+        var utc = Calendar(identifier: .gregorian)
+        utc.timeZone = TimeZone(identifier: "UTC")!
+
+        let formatter = DateFormatter()
+        formatter.calendar = utc
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = utc.timeZone
+        formatter.dateFormat = "yyyy-MM-dd"
+
+        guard
+            let date = formatter.date(from: iso),
+            let previous = utc.date(byAdding: .day, value: -1, to: date)
+        else { return nil }
+
+        return formatter.string(from: previous)
+    }
+
     // MARK: - UNUserNotificationCenter plumbing
 
     private func remainingBudget() async -> Int {
@@ -267,7 +434,9 @@ struct NotificationScheduler {
     }
 
     private func isOwnIdentifier(_ identifier: String) -> Bool {
-        identifier.hasPrefix(Self.prayerIdentifierPrefix) || identifier.hasPrefix(Self.holidayIdentifierPrefix)
+        identifier.hasPrefix(Self.prayerIdentifierPrefix)
+            || identifier.hasPrefix(Self.holidayIdentifierPrefix)
+            || identifier.hasPrefix(Self.fastingIdentifierPrefix)
     }
 
     private func schedule(_ candidate: NotificationCandidate) async {

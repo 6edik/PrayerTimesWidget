@@ -13,6 +13,7 @@ struct IslamicCalendarDayCell: View {
                     .font(.system(size: 21, weight: .semibold, design: .rounded))
                     .monospacedDigit()
                     .foregroundStyle(primaryTextColor)
+                    .overlay(combinedIndicatorRing)
 
                 if let hijriText = item.hijriText {
                     Text(hijriText)
@@ -35,10 +36,6 @@ struct IslamicCalendarDayCell: View {
         .contentShape(Rectangle())
     }
 
-    private var hasEvent: Bool {
-        !item.events.isEmpty
-    }
-    
     private var gregorianCalendar: Calendar {
         var calendar = Calendar(identifier: .gregorian)
         calendar.locale = .autoupdatingCurrent
@@ -46,37 +43,56 @@ struct IslamicCalendarDayCell: View {
         return calendar
     }
 
+    // Same Umm-al-Qura source, locale and timezone recipe used everywhere
+    // else in the app (Home/widget Hijri display, this cell's own Hijri day
+    // number above) — see `HijriDateFormatting`.
     private var hijriCalendar: Calendar {
-        var calendar = Calendar(identifier: .islamicUmmAlQura)
-        calendar.locale = .autoupdatingCurrent
-        calendar.timeZone = .autoupdatingCurrent
-        return calendar
+        HijriDateFormatting.calendar()
     }
 
-    private var isMondayOrThursday: Bool {
-        let weekday = gregorianCalendar.component(.weekday, from: item.date)
-        return weekday == 2 || weekday == 5
-    }
-
-    private var isWhiteDay: Bool {
-        let hijriDay = hijriCalendar.dateComponents([.day], from: item.date).day
-        return hijriDay == 13 || hijriDay == 14 || hijriDay == 15
-    }
-
+    // Single shared definition (`VoluntaryFastingClassifier`) so this
+    // highlight and the voluntary-fasting notification scheduler always
+    // agree on which days are Monday/Thursday/White Days.
     private var isSunnahFastDay: Bool {
-        isMondayOrThursday || isWhiteDay
+        !VoluntaryFastingClassifier.occasions(
+            for: item.date,
+            gregorianCalendar: gregorianCalendar,
+            hijriCalendar: hijriCalendar
+        ).isEmpty
     }
 
+    // Only `isHighlightedHoliday` (one of the app's curated
+    // MajorIslamicHoliday cases) may turn the date number orange — an
+    // ordinary AlAdhan entry like "Urs of …" that isn't one of those never
+    // does, even though it's still fully visible in the day sheet.
     private var primaryTextColor: Color {
-        if hasEvent { return .orange }
+        if item.isHighlightedHoliday { return .orange }
         if isSunnahFastDay { return .blue }
         return item.isInDisplayedMonth ? .primary : .secondary
     }
 
     private var secondaryTextColor: Color {
-        if hasEvent { return .orange.opacity(0.95) }
+        if item.isHighlightedHoliday { return .orange.opacity(0.95) }
         if isSunnahFastDay { return .blue.opacity(0.82) }
         return .secondary
+    }
+
+    // Combination state: a selected/curated holiday that falls on a
+    // Monday/Thursday/White Day keeps the orange date number (above) but
+    // also gets a blue ring around it, so both facts stay visible at once
+    // instead of one silently overriding the other. An unhighlighted
+    // AlAdhan event must never trigger this ring on its own.
+    private var showsCombinedHolidayAndFastDayRing: Bool {
+        item.isHighlightedHoliday && isSunnahFastDay
+    }
+
+    @ViewBuilder
+    private var combinedIndicatorRing: some View {
+        if showsCombinedHolidayAndFastDayRing {
+            Circle()
+                .stroke(Color.blue.opacity(0.85), lineWidth: 1.5)
+                .frame(width: 26, height: 26)
+        }
     }
 
     @ViewBuilder

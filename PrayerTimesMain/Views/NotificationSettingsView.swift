@@ -36,6 +36,20 @@ struct NotificationSettingsView: View {
                     }
                 }
 
+                Section("Freiwilliges Fasten") {
+                    NavigationLink {
+                        VoluntaryFastingNotificationDetailView(setting: bindingForVoluntaryFasting())
+                    } label: {
+                        HStack {
+                            Text("Montag, Donnerstag & Weiße Tage")
+                            Spacer()
+                            Text(summaryText(for: settings.voluntaryFasting))
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                }
+
                 Section("Feiertage") {
                     ForEach(MajorIslamicHoliday.allCases) { holiday in
                         NavigationLink {
@@ -108,6 +122,21 @@ struct NotificationSettingsView: View {
         )
     }
 
+    private func bindingForVoluntaryFasting() -> Binding<VoluntaryFastingNotificationSetting> {
+        Binding(
+            get: { settings.voluntaryFasting },
+            set: { newValue in
+                let wasEnabled = settings.voluntaryFasting.hasAnyEnabled
+                settings.voluntaryFasting = newValue
+                persistAndReschedule()
+
+                if newValue.hasAnyEnabled, !wasEnabled {
+                    Task { await requestPermissionIfNeeded() }
+                }
+            }
+        )
+    }
+
     private func bindingForHoliday(_ holiday: MajorIslamicHoliday) -> Binding<HolidayNotificationSetting> {
         Binding(
             get: { settings.setting(for: holiday) },
@@ -143,6 +172,16 @@ struct NotificationSettingsView: View {
     private func summaryText(for setting: PrayerNotificationSetting) -> String {
         guard setting.isEnabled else { return "Aus" }
         return setting.reminderLeadTime == .none ? "An" : "An · \(setting.reminderLeadTime.rawValue) Min. vorher"
+    }
+
+    private func summaryText(for setting: VoluntaryFastingNotificationSetting) -> String {
+        guard setting.hasAnyEnabled else { return "Aus" }
+
+        var parts: [String] = []
+        if setting.monday { parts.append("Mo") }
+        if setting.thursday { parts.append("Do") }
+        if setting.whiteDays { parts.append("Weiße Tage") }
+        return parts.joined(separator: " · ")
     }
 
     private func summaryText(for setting: HolidayNotificationSetting) -> String {
@@ -185,6 +224,53 @@ private struct PrayerNotificationDetailView: View {
             }
         }
         .navigationTitle(kind.displayName)
+        .navigationBarTitleDisplayMode(.inline)
+    }
+}
+
+private struct VoluntaryFastingNotificationDetailView: View {
+    @Binding var setting: VoluntaryFastingNotificationSetting
+
+    var body: some View {
+        Form {
+            Section("Anlässe") {
+                Toggle("Montage", isOn: $setting.monday)
+                Toggle("Donnerstage", isOn: $setting.thursday)
+                Toggle("Weiße Tage (13., 14., 15. Hijri-Tag)", isOn: $setting.whiteDays)
+            }
+
+            if setting.hasAnyEnabled {
+                Section("Zeitpunkt") {
+                    Stepper(value: $setting.minutesAfterMaghrib, in: 0...60, step: 5) {
+                        HStack {
+                            Text("Nach Maghrib am Vorabend")
+                            Spacer()
+                            Text("\(setting.minutesAfterMaghrib) Min.")
+                                .foregroundStyle(.secondary)
+                                .monospacedDigit()
+                        }
+                    }
+                }
+
+                Section("Ton") {
+                    Picker("Ton", selection: $setting.sound) {
+                        ForEach(NotificationSoundOption.allCases) { option in
+                            Text(option.title).tag(option)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                }
+            }
+
+            Section("Hinweis") {
+                Text("Die Erinnerung wird am Vorabend des Fastentags nach Maghrib geplant – für einen Montag also nach Maghrib am Sonntag, nicht am Montag selbst.")
+                Text("Während des Ramadan sowie an Eid al-Fitr, Eid al-Adha und den drei Tagen von Tashriq danach wird keine Erinnerung für freiwilliges Fasten geplant.")
+                Text("Fehlen für den Fastentag selbst gültige Fajr- oder Maghrib-Zeiten, wird die Erinnerung ohne Dauerangabe geplant statt eine Dauer zu schätzen.")
+            }
+            .font(.caption)
+            .foregroundStyle(.secondary)
+        }
+        .navigationTitle("Freiwilliges Fasten")
         .navigationBarTitleDisplayMode(.inline)
     }
 }

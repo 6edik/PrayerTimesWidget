@@ -106,18 +106,44 @@ final class IslamicCalendarViewModel: ObservableObject {
         isHolidayOverviewLoading = false
     }
 
-    func events(for date: Date) -> [IslamicSpecialDay] {
+    /// Every AlAdhan special day attached to `date`, unfiltered — feeds the
+    /// day sheet's event list. Includes entries like "Urs of …" or "Birth
+    /// of …" that are not one of the app's selected major holidays; never
+    /// used to decide the calendar grid's orange highlight (see
+    /// `isHighlightedHoliday(for:)`).
+    func allEventsForDay(_ date: Date) -> [IslamicSpecialDay] {
         specialDays
             .filter { calendar.isDate($0.sortDate, inSameDayAs: date) }
             .sorted { $0.sortDate < $1.sortDate }
     }
 
-    func hasEvents(for date: Date) -> Bool {
-        !events(for: date).isEmpty
+    func hasAnyEventForDay(_ date: Date) -> Bool {
+        !allEventsForDay(date).isEmpty
     }
 
-    func prayerDay(for date: Date) -> PrayerDay? {
-        prayerStore.loadPrayerDay(for: date, settings: settingsProvider())
+    /// True only when at least one of `date`'s AlAdhan special days is one
+    /// of the app's own curated `MajorIslamicHoliday` cases — the exact
+    /// same Umm-al-Qura-based definitions and AlAdhan-reported Hijri
+    /// day/month (`IslamicHolidayClassifier`) the Feiertage-overview and
+    /// the holiday-notification scheduler already use. Deliberately not a
+    /// title search (no "Eid"/"Birth"/"Urs" string matching) and not just
+    /// "does this day have any event at all" — an ordinary AlAdhan entry
+    /// like "Urs of …" must never make this true.
+    func isHighlightedHoliday(for date: Date) -> Bool {
+        allEventsForDay(date).contains { IslamicHolidayClassifier.isMajorHoliday($0, hijriCalendar: hijriCalendar) }
+    }
+
+    /// Builds a fresh, per-day view model for the day sheet's cache-first,
+    /// single-day prayer-times lookup. A new instance per presented day
+    /// (never reused across taps) keeps rapid day switches and sheet
+    /// dismissal race-free: each instance only ever holds/updates state for
+    /// the one `date` it was created with.
+    func makeDaySheetViewModel(for date: Date) -> IslamicDaySheetViewModel {
+        IslamicDaySheetViewModel(
+            date: date,
+            prayerStore: prayerStore,
+            settingsProvider: settingsProvider
+        )
     }
 
     private struct HijriMonthKey: Hashable {
@@ -207,7 +233,8 @@ final class IslamicCalendarViewModel: ObservableObject {
 
         return dates.map { date in
             let prayer = cachedDays[isoFormatter.string(from: date)]
-            let dayEvents = events(for: date)
+            let dayEvents = allEventsForDay(date)
+            let isHighlighted = dayEvents.contains { IslamicHolidayClassifier.isMajorHoliday($0, hijriCalendar: hijriCalendar) }
 
             return IslamicCalendarDayItem(
                 date: date,
@@ -216,7 +243,8 @@ final class IslamicCalendarViewModel: ObservableObject {
                 isSelected: calendar.isDate(date, inSameDayAs: selectedDate),
                 gregorianDayText: String(calendar.component(.day, from: date)),
                 hijriText: hijriDayText(for: date),
-                events: dayEvents,
+                allEventsForDay: dayEvents,
+                isHighlightedHoliday: isHighlighted,
                 prayerDay: prayer
             )
         }

@@ -45,7 +45,7 @@ struct IslamicCalendarView: View {
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
 
-                    let count = viewModel.events(for: selectedDate).count
+                    let count = viewModel.allEventsForDay(selectedDate).count
                     Text(
                         count == 0
                         ? "Kein Ereignis an diesem Tag"
@@ -148,9 +148,13 @@ struct IslamicCalendarView: View {
                     .presentationDragIndicator(.visible)
             }
             .sheet(item: $selectedDaySheet) { day in
-                IslamicDayEventsSheet(day: day)
-                    .presentationDetents([.medium, .large])
-                    .presentationDragIndicator(.visible)
+                IslamicDayEventsSheet(
+                    day: day,
+                    dayViewModel: viewModel.makeDaySheetViewModel(for: day.date)
+                )
+                .id(day.id)
+                .presentationDetents([.medium, .large])
+                .presentationDragIndicator(.visible)
             }
             .task(id: displayedYear) {
                 await viewModel.loadYear(for: displayedMonth)
@@ -260,13 +264,10 @@ struct IslamicCalendarView: View {
     }
 
     private func presentSheet(for date: Date) {
-        let events = viewModel.events(for: date)
-        let prayerDay = viewModel.prayerDay(for: date)
-
         selectedDaySheet = IslamicDaySheetData(
             date: date,
-            prayerDay: prayerDay,
-            events: events
+            hijriText: viewModel.hijriDisplayText(for: date),
+            events: viewModel.allEventsForDay(date)
         )
     }
 }
