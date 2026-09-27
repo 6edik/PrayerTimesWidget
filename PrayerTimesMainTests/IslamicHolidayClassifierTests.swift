@@ -63,4 +63,77 @@ struct IslamicHolidayClassifierTests {
         // One entry per MajorIslamicHoliday case, no duplicates/collisions.
         #expect(IslamicHolidayClassifier.majorHolidayKeys.count == MajorIslamicHoliday.allCases.count)
     }
+
+    // MARK: - filterRelevant
+
+    @Test func filterRelevantDropsUrsAndBirthEntries() async throws {
+        let urs = makeSpecialDay(hijriDay: "6", hijriMonthNumber: 3)
+        let birth = makeSpecialDay(hijriDay: "11", hijriMonthNumber: 4)
+        let filtered = IslamicHolidayClassifier.filterRelevant([urs, birth], hijriCalendar: hijriCalendar)
+        #expect(filtered.isEmpty)
+    }
+
+    @Test func filterRelevantKeepsCuratedHolidaysOnly() async throws {
+        let eidAlFitr = makeSpecialDay(hijriDay: "1", hijriMonthNumber: 10)
+        let urs = makeSpecialDay(hijriDay: "6", hijriMonthNumber: 3)
+        let filtered = IslamicHolidayClassifier.filterRelevant([eidAlFitr, urs], hijriCalendar: hijriCalendar)
+        #expect(filtered.count == 1)
+        #expect(filtered.first?.hijriDay == "1")
+    }
+
+    @Test func filterRelevantPreservesAllCuratedHolidaysWhenSeveralPresent() async throws {
+        let allHolidayDays = MajorIslamicHoliday.allCases.map {
+            makeSpecialDay(hijriDay: String($0.hijriKey.day), hijriMonthNumber: $0.hijriKey.month)
+        }
+        let filtered = IslamicHolidayClassifier.filterRelevant(allHolidayDays, hijriCalendar: hijriCalendar)
+        #expect(filtered.count == allHolidayDays.count)
+    }
+
+    // MARK: - loadYearMigratingIfNeeded
+
+    private func makeStoreSuiteName() -> String {
+        "com.mertgedik.prayertimes.tests.\(UUID().uuidString)"
+    }
+
+    @Test func loadYearMigratingIfNeededReturnsNilWhenNothingCached() async throws {
+        let suite = makeStoreSuiteName()
+        defer { UserDefaults(suiteName: suite)?.removePersistentDomain(forName: suite) }
+        let store = SharedIslamicCalendarStore(suiteName: suite)
+
+        #expect(IslamicHolidayClassifier.loadYearMigratingIfNeeded(2026, store: store, hijriCalendar: hijriCalendar) == nil)
+    }
+
+    @Test func loadYearMigratingIfNeededCleansUpAndRePersistsStaleData() async throws {
+        let suite = makeStoreSuiteName()
+        defer { UserDefaults(suiteName: suite)?.removePersistentDomain(forName: suite) }
+        let store = SharedIslamicCalendarStore(suiteName: suite)
+
+        // Simulates a cache written before the filter existed — the store
+        // itself is "dumb" and accepts whatever it's given.
+        let eidAlFitr = makeSpecialDay(hijriDay: "1", hijriMonthNumber: 10)
+        let urs = makeSpecialDay(hijriDay: "1", hijriMonthNumber: 10)
+        store.saveYear(2026, days: [eidAlFitr, urs])
+        #expect(store.loadYear(2026)?.count == 2)
+
+        let migrated = IslamicHolidayClassifier.loadYearMigratingIfNeeded(2026, store: store, hijriCalendar: hijriCalendar)
+        #expect(migrated?.count == 1)
+
+        // The on-disk copy itself was rewritten — a later, independent read
+        // (e.g. a fresh app launch) sees the cleaned-up version directly,
+        // without needing to migrate again.
+        #expect(store.loadYear(2026)?.count == 1)
+    }
+
+    @Test func loadYearMigratingIfNeededIsANoOpWhenAlreadyClean() async throws {
+        let suite = makeStoreSuiteName()
+        defer { UserDefaults(suiteName: suite)?.removePersistentDomain(forName: suite) }
+        let store = SharedIslamicCalendarStore(suiteName: suite)
+
+        let eidAlFitr = makeSpecialDay(hijriDay: "1", hijriMonthNumber: 10)
+        store.saveYear(2026, days: [eidAlFitr])
+
+        let result = IslamicHolidayClassifier.loadYearMigratingIfNeeded(2026, store: store, hijriCalendar: hijriCalendar)
+        #expect(result?.count == 1)
+        #expect(store.loadYear(2026)?.count == 1)
+    }
 }

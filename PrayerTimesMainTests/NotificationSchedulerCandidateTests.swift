@@ -360,6 +360,76 @@ struct NotificationSchedulerCandidateTests {
         }
     }
 
+    /// Covers "Bereits geplante Benachrichtigungen für ausgeschlossene
+    /// Ereignisse müssen entfernt werden": an "Urs of …" entry cached
+    /// alongside a real, enabled holiday on the same date must never
+    /// produce a notification candidate of its own, and must not affect
+    /// the genuine holiday's candidates either.
+    @Test func excludedEventNeverProducesAHolidayCandidateEvenCachedAlongsideAMatch() async throws {
+        let suite1 = makeSuiteName(); let suite2 = makeSuiteName(); let suite3 = makeSuiteName()
+        defer { cleanup([suite1, suite2, suite3]) }
+
+        let (timesStore, settingsStore, calendarStore) = makeSettings(
+            prayerTimesSuite: suite1, prayerSettingsSuite: suite2, calendarSuite: suite3
+        )
+        settingsStore.saveAutoSettings(AutoPrayerSettings())
+
+        let now = Date()
+        var device = Calendar(identifier: .gregorian)
+        device.timeZone = .autoupdatingCurrent
+        let year = device.component(.year, from: now)
+        let holidayDate = device.date(byAdding: .day, value: 5, to: now)!
+
+        let eidAlFitr = IslamicSpecialDay(
+            title: "Eid al-Fitr", gregorianReadable: "Test", gregorianMonthName: "Test", gregorianYear: String(year),
+            hijriDay: "1", hijriMonth: "Shawwal", hijriYear: "1447", hijriWeekday: "Test",
+            sortDate: holidayDate, hijriMonthNumber: 10
+        )
+        // Non-colliding Hijri key: a real "Urs of …" observance has its own,
+        // unrelated Hijri date. (A genuine key collision — AlAdhan tagging
+        // two differently-titled entries with the *same* Hijri day/month —
+        // is a separate, documented, user-accepted edge case where both
+        // are treated as relevant, matching the pre-existing Feiertage-
+        // übersicht/notification behavior; that's not what this test
+        // covers.)
+        let ursEntry = IslamicSpecialDay(
+            title: "Urs of Someone", gregorianReadable: "Test", gregorianMonthName: "Test", gregorianYear: String(year),
+            hijriDay: "6", hijriMonth: "Rabi al-awwal", hijriYear: "1447", hijriWeekday: "Test",
+            sortDate: holidayDate, hijriMonthNumber: 3
+        )
+
+        // Simulates a cache written before the exclusion filter existed —
+        // both entries present, unfiltered.
+        calendarStore.saveYear(year, days: [eidAlFitr, ursEntry])
+        calendarStore.saveYear(year + 1, days: [])
+
+        var settings = NotificationSettings.zero
+        settings.setSetting(
+            HolidayNotificationSetting(isEnabled: true, notifyDayBefore: false, notifyOnDay: true, hour: 9, minute: 0),
+            for: .eidAlFitr
+        )
+
+        let scheduler = NotificationScheduler(
+            timesStore: timesStore, settingsStore: settingsStore,
+            notificationSettingsStore: NotificationSettingsStore(suiteName: makeSuiteName()),
+            calendarStore: calendarStore
+        )
+
+        let candidates = await scheduler.holidayCandidates(settings: settings, now: now)
+
+        // Exactly one candidate (the real holiday's "on day" reminder) —
+        // never a second one for "Urs of Someone", which has no
+        // MajorIslamicHoliday case to be scheduled under in the first
+        // place.
+        #expect(candidates.count == 1)
+        #expect(candidates.allSatisfy { $0.title == "Eid al-Fitr" })
+        #expect(!candidates.contains { $0.title.contains("Urs") })
+
+        // And the migration ran: the on-disk cache for this year no longer
+        // contains the excluded entry.
+        #expect(calendarStore.loadYear(year)?.count == 1)
+    }
+
     @Test func disabledHolidayProducesNoCandidates() async throws {
         let suite1 = makeSuiteName(); let suite2 = makeSuiteName(); let suite3 = makeSuiteName()
         defer { cleanup([suite1, suite2, suite3]) }

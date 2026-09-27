@@ -8,8 +8,7 @@ struct IslamicCalendarView: View {
     @State private var displayedMonth = Date()
     @State private var showInfoSheet = false
     @State private var showHolidayOverview = false
-    @State private var showYearEventsSheet = false
-    
+
     init(settingsProvider: @escaping () -> AutoPrayerSettings) {
         _viewModel = StateObject(
             wrappedValue: IslamicCalendarViewModel(settingsProvider: settingsProvider)
@@ -70,31 +69,13 @@ struct IslamicCalendarView: View {
                         .foregroundStyle(.red)
                         .multilineTextAlignment(.center)
                 }
-
-                VStack(spacing: 8) {
-                    HStack {
-                        Text("Besondere Tage \(displayedYear)")
-                            .font(.headline)
-                        Spacer()
-                    }
-
-                    Text("\(viewModel.yearEventCount(for: displayedMonth)) Ereignisse im angezeigten Jahr")
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                }
-                .padding(.top, 4)
             }
             .toolbar {
                 ToolbarItemGroup(placement: .topBarTrailing) {
                     TopBarActionButton(systemImage: "sparkles.rectangle.stack", accessibilityLabel: "Feiertage") {
                         showHolidayOverview = true
                     }
-                    
-                    TopBarActionButton(systemImage: "list.bullet", accessibilityLabel: "Jahresliste") {
-                        showYearEventsSheet = true
-                    }
-                    
+
                     TopBarActionButton(systemImage: "calendar", accessibilityLabel: "Heute") {
                         let today = Date()
                         selectedDate = today
@@ -121,18 +102,6 @@ struct IslamicCalendarView: View {
                         showInfoSheet = true
                     }
                 }
-            }
-            .sheet(isPresented: $showYearEventsSheet) {
-                IslamicYearEventsSheet(
-                    viewModel: viewModel,
-                    yearDate: displayedMonth
-                ) { item in
-                    selectedDate = item.sortDate
-                    displayedMonth = startOfMonth(for: item.sortDate)
-                    presentSheet(for: item.sortDate)
-                }
-                .presentationDetents([.medium, .large])
-                .presentationDragIndicator(.visible)
             }
             .sheet(isPresented: $showHolidayOverview) {
                 IslamicHolidayOverviewSheet(

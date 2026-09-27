@@ -199,11 +199,20 @@ struct NotificationScheduler {
 
         var allDays: [IslamicSpecialDay] = []
         for year in years {
-            if let cached = calendarStore.loadYear(year) {
+            // Migrates an already-cached year written before the curated-
+            // holiday filter existed (e.g. still containing "Urs of …"/
+            // "Birth of …" entries) the first time it's touched, purely
+            // offline — never conflated with "nothing cached", which falls
+            // through to a fresh fetch below.
+            if let cached = IslamicHolidayClassifier.loadYearMigratingIfNeeded(year, store: calendarStore, hijriCalendar: hijriCalendar) {
                 allDays += cached
             } else if let fetched = try? await calendarService.fetchSpecialDays(forGregorianYear: year) {
-                calendarStore.saveYear(year, days: fetched)
-                allDays += fetched
+                // Filter to the curated holidays before persisting — never
+                // store (or match candidates against) AlAdhan's raw,
+                // unfiltered response.
+                let relevant = IslamicHolidayClassifier.filterRelevant(fetched, hijriCalendar: hijriCalendar)
+                calendarStore.saveYear(year, days: relevant)
+                allDays += relevant
             }
         }
 

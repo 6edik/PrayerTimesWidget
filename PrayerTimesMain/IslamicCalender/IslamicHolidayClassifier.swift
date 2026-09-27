@@ -93,4 +93,52 @@ enum IslamicHolidayClassifier {
         }
         return MajorIslamicHoliday.allCases.first { $0.hijriKey == key }
     }
+
+    /// The single, central filter for "which AlAdhan special days may this
+    /// app ever keep": only entries matching one of the 8 curated
+    /// `MajorIslamicHoliday` cases survive. Everything else — "Urs of …",
+    /// "Birth of …"/"Birthday …" and any other personal/regional
+    /// observance AlAdhan happens to report — is dropped here.
+    ///
+    /// Both `SharedIslamicCalendarStore` (before every persistent write,
+    /// and self-healing already-persisted data on every read) and
+    /// `IslamicCalendarViewModel` (right after a fresh network fetch, so
+    /// the in-memory `specialDays` driving the UI is never briefly
+    /// unfiltered either) call this — same rule, multiple enforcement
+    /// points, so no call site can accidentally let an irrelevant event
+    /// through by forgetting to filter.
+    static func filterRelevant(_ days: [IslamicSpecialDay], hijriCalendar: Calendar) -> [IslamicSpecialDay] {
+        days.filter { isMajorHoliday($0, hijriCalendar: hijriCalendar) }
+    }
+
+    /// Reads `year` from `store` and — if it still contains any entry that
+    /// isn't one of the curated holidays (i.e. it predates this filter, or
+    /// was written by an older app version) — immediately re-persists the
+    /// cleaned-up version, so this migration runs at most once per stale
+    /// cache and purely offline, no network request.
+    ///
+    /// `SharedIslamicCalendarStore` can't do this filtering itself: it's
+    /// compiled into the widget extension target too, which doesn't
+    /// include this file. Every read of a cached year must go through this
+    /// helper instead of calling `store.loadYear` directly, so a cache
+    /// written before this filter existed gets cleaned the first time the
+    /// (main-app-only) view model or notification scheduler touches it —
+    /// not just filtered transiently for display.
+    ///
+    /// Returns `nil` exactly when the store has nothing cached for this
+    /// year — never conflated with "present but fully filtered out",
+    /// which returns an empty array.
+    static func loadYearMigratingIfNeeded(
+        _ year: Int,
+        store: SharedIslamicCalendarStore,
+        hijriCalendar: Calendar
+    ) -> [IslamicSpecialDay]? {
+        guard let cached = store.loadYear(year) else { return nil }
+
+        let relevant = filterRelevant(cached, hijriCalendar: hijriCalendar)
+        if relevant.count != cached.count {
+            store.saveYear(year, days: relevant)
+        }
+        return relevant
+    }
 }

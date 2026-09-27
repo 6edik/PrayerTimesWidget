@@ -70,7 +70,7 @@ final class IslamicCalendarViewModel: ObservableObject {
     func loadYear(for date: Date, force: Bool = false) async {
         let year = calendar.component(.year, from: date)
 
-        if !force, let cached = calendarStore.loadYear(year) {
+        if !force, let cached = IslamicHolidayClassifier.loadYearMigratingIfNeeded(year, store: calendarStore, hijriCalendar: hijriCalendar) {
             specialDays = cached
             errorMessage = nil
             isLoading = false
@@ -82,8 +82,13 @@ final class IslamicCalendarViewModel: ObservableObject {
 
         do {
             let fetched = try await service.fetchSpecialDays(forGregorianYear: year)
-            specialDays = fetched
-            calendarStore.saveYear(year, days: fetched)
+            // Filtered immediately on arrival — `specialDays` (which feeds
+            // the day sheet, the grid's orange highlight and the "X
+            // Ereignisse" summary) must never even transiently hold an
+            // irrelevant AlAdhan entry, not just the persisted copy.
+            let relevant = IslamicHolidayClassifier.filterRelevant(fetched, hijriCalendar: hijriCalendar)
+            specialDays = relevant
+            calendarStore.saveYear(year, days: relevant)
         } catch {
             specialDays = []
             errorMessage = error.localizedDescription
@@ -297,7 +302,7 @@ extension IslamicCalendarViewModel {
 
     private func mergedDays(for years: [Int]) -> [IslamicSpecialDay] {
         let merged = years
-            .compactMap { calendarStore.loadYear($0) }
+            .compactMap { IslamicHolidayClassifier.loadYearMigratingIfNeeded($0, store: calendarStore, hijriCalendar: hijriCalendar) }
             .flatMap { $0 }
 
         return deduplicated(days: merged)
@@ -317,13 +322,14 @@ extension IslamicCalendarViewModel {
     }
 
     private func missingYears(in years: [Int]) -> [Int] {
-        years.filter { calendarStore.loadYear($0) == nil }
+        years.filter { IslamicHolidayClassifier.loadYearMigratingIfNeeded($0, store: calendarStore, hijriCalendar: hijriCalendar) == nil }
     }
 
     private func fetchAndCache(year: Int) async throws -> [IslamicSpecialDay] {
         let fetched = try await service.fetchSpecialDays(forGregorianYear: year)
-        calendarStore.saveYear(year, days: fetched)
-        return fetched
+        let relevant = IslamicHolidayClassifier.filterRelevant(fetched, hijriCalendar: hijriCalendar)
+        calendarStore.saveYear(year, days: relevant)
+        return relevant
     }
 
     private func nextHoliday(after date: Date, in items: [IslamicSpecialDay]) -> IslamicSpecialDay? {
@@ -389,7 +395,7 @@ extension IslamicCalendarViewModel {
                     requestedYears.append(nextYearToLoad)
                 }
 
-                if calendarStore.loadYear(nextYearToLoad) == nil {
+                if IslamicHolidayClassifier.loadYearMigratingIfNeeded(nextYearToLoad, store: calendarStore, hijriCalendar: hijriCalendar) == nil {
                     _ = try await fetchAndCache(year: nextYearToLoad)
                 }
 
@@ -453,27 +459,5 @@ extension IslamicCalendarViewModel {
 
     func holidayHijriText(for holiday: IslamicSpecialDay) -> String {
         "\(holiday.hijriDay). \(holiday.hijriMonth) \(holiday.hijriYear)"
-    }
-}
-
-extension IslamicCalendarViewModel {
-    func yearEvents(for date: Date) -> [IslamicSpecialDay] {
-        let year = calendar.component(.year, from: date)
-
-        if let cached = calendarStore.loadYear(year) {
-            return cached.sorted { $0.sortDate < $1.sortDate }
-        }
-
-        return specialDays
-            .filter { calendar.component(.year, from: $0.sortDate) == year }
-            .sorted { $0.sortDate < $1.sortDate }
-    }
-
-    func yearEventCount(for date: Date) -> Int {
-        yearEvents(for: date).count
-    }
-
-    func yearTitle(for date: Date) -> String {
-        String(calendar.component(.year, from: date))
     }
 }
