@@ -69,4 +69,41 @@ struct AutoPrayerSettingsMigrationTests {
         // "app default" (address + matching location) for a fresh install.
         #expect(AutoPrayerSettings().location == nil)
     }
+
+    // MARK: - PrayerLocation.source backward compatibility
+
+    @Test func legacyLocationJSONWithoutSourceDecodesAsConfirmedPlace() async throws {
+        // Exactly the shape saved before `source` existed — no "source" key
+        // at all. Must decode successfully (never fail and fall back to
+        // the whole-settings default), defaulting to `.confirmedPlace`.
+        let legacyLocationJSON = """
+        {
+            "name": "Aachen, DE",
+            "coordinate": { "latitude": 50.7755, "longitude": 6.0836 }
+        }
+        """.data(using: .utf8)!
+
+        let decoded = try JSONDecoder().decode(PrayerLocation.self, from: legacyLocationJSON)
+
+        #expect(decoded.source == .confirmedPlace)
+        #expect(decoded.coordinate.latitude == 50.7755)
+    }
+
+    @Test func currentLocationSourceRoundTrips() async throws {
+        let original = PrayerLocation(
+            name: "Aktueller Standort",
+            coordinate: GeoCoordinate(latitude: 52.52, longitude: 13.405),
+            source: .currentLocation
+        )
+
+        let data = try JSONEncoder().encode(original)
+        let decoded = try JSONDecoder().decode(PrayerLocation.self, from: data)
+
+        #expect(decoded == original)
+        #expect(decoded.source == .currentLocation)
+    }
+
+    @Test func defaultGelsenkirchenLocationIsConfirmedPlace() async throws {
+        #expect(PrayerLocation.defaultGelsenkirchen.source == .confirmedPlace)
+    }
 }

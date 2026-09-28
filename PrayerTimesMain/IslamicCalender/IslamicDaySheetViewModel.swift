@@ -47,11 +47,23 @@ final class IslamicDaySheetViewModel: ObservableObject {
     let date: Date
 
     @Published private(set) var state: LoadState = .idle
+    /// The day's estimated fasting duration (adjusted Maghrib minus adjusted
+    /// Fajr, via `FastingDurationCalculator` — the same calculation
+    /// `NotificationScheduler` uses for existing fasting reminders), kept in
+    /// lockstep with `state`: set together with a `.loaded` result, cleared
+    /// on every new `load()` attempt. `nil` whenever this day has no valid
+    /// prayer times to compute it from — never a guessed or partial value.
+    @Published private(set) var fastingDuration: FastingDurationCalculator.Result?
 
     private let prayerStore: SharedPrayerTimesStore
     private let settingsProvider: () -> AutoPrayerSettings
     private let service: any SingleDayPrayerTimesFetching
     private var currentTask: Task<Void, Never>?
+    // Device-timezone "yyyy-MM-dd" label for `date` — the same convention
+    // `SharedPrayerTimesStore`'s own ISO-date keys use (see `date`'s doc
+    // comment above), so it lines up with whichever cache entry `load()`
+    // actually serves.
+    private let isoDate: String
 
     init(
         date: Date,
@@ -63,6 +75,7 @@ final class IslamicDaySheetViewModel: ObservableObject {
         self.prayerStore = prayerStore
         self.settingsProvider = settingsProvider
         self.service = service
+        self.isoDate = Self.isoDateString(from: date)
     }
 
     deinit {
@@ -89,10 +102,14 @@ final class IslamicDaySheetViewModel: ObservableObject {
                 adjusted: cachedDay.times.applyingAdjustments(settings.adjustments),
                 source: .cached
             )
+            fastingDuration = FastingDurationCalculator.result(
+                isoDate: isoDate, times: cachedDay.times, adjustments: settings.adjustments
+            )
             return
         }
 
         state = .loading
+        fastingDuration = nil
 
         let service = self.service
         let prepared = settings.asPrayerSettings(for: requestedDate)
@@ -107,11 +124,23 @@ final class IslamicDaySheetViewModel: ObservableObject {
                     adjusted: raw.applyingAdjustments(settings.adjustments),
                     source: .fetched
                 )
+                self.fastingDuration = FastingDurationCalculator.result(
+                    isoDate: self.isoDate, times: raw, adjustments: settings.adjustments
+                )
             } catch {
                 guard !Task.isCancelled, let self else { return }
                 self.state = Self.isOfflineError(error) ? .offline : .failed(error.localizedDescription)
             }
         }
+    }
+
+    private static func isoDateString(from date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.calendar = Calendar(identifier: .gregorian)
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = .current
+        formatter.dateFormat = "yyyy-MM-dd"
+        return formatter.string(from: date)
     }
 
     /// Cancels any in-flight single-day request without touching `state` —

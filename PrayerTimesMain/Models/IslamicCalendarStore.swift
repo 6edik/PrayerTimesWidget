@@ -18,7 +18,7 @@ struct SharedIslamicCalendarStore {
     private var defaults: UserDefaults? { UserDefaults(suiteName: suiteName) }
     private let key = "islamic_calendar_cache_v1"
 
-    init(suiteName: String = AppGroup.id) {
+    nonisolated init(suiteName: String = AppGroup.id) {
         self.suiteName = suiteName
     }
 

@@ -18,6 +18,7 @@ struct IslamicDayEventsSheet: View {
             }
             .padding()
         }
+        .background(Color("AppBackground").ignoresSafeArea())
         .task {
             dayViewModel.load()
         }
@@ -72,6 +73,8 @@ struct IslamicDayEventsSheet: View {
                         .font(.caption)
                         .foregroundStyle(.orange)
                 }
+
+                fastingDurationSection
 
             case .offline:
                 Label(
@@ -143,6 +146,35 @@ struct IslamicDayEventsSheet: View {
         }
     }
 
+    /// Voluntary-fasting estimate for this day, computed centrally by
+    /// `FastingDurationCalculator` (adjusted Maghrib minus adjusted Fajr, as
+    /// full `Date`s in the location's own timezone) — the same calculation
+    /// `NotificationScheduler` uses for existing fasting reminders. Omitted
+    /// entirely when this day has no valid Fajr/Maghrib to compute it from,
+    /// never a guessed or partial duration.
+    @ViewBuilder
+    private var fastingDurationSection: some View {
+        if let fasting = dayViewModel.fastingDuration {
+            Divider()
+
+            HStack {
+                Label("Voraussichtliche Fastendauer", systemImage: "moon.stars")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                Spacer()
+                Text(FastingDurationCalculator.formattedDuration(fasting.duration))
+                    .fontWeight(.semibold)
+            }
+
+            Text(
+                "Fajr \(FastingDurationCalculator.clockString(fasting.fajrDate, timezoneIdentifier: fasting.timezoneIdentifier))" +
+                " bis Maghrib \(FastingDurationCalculator.clockString(fasting.maghribDate, timezoneIdentifier: fasting.timezoneIdentifier))"
+            )
+            .font(.caption)
+            .foregroundStyle(.secondary)
+        }
+    }
+
     private func prayerRow(_ title: String, _ value: String) -> some View {
         HStack {
             Text(title)
@@ -159,4 +191,29 @@ struct IslamicDayEventsSheet: View {
         formatter.dateStyle = .long
         return formatter.string(from: date)
     }
+}
+
+private func previewDay() -> IslamicDaySheetData {
+    IslamicDaySheetData(
+        date: Date(),
+        hijriText: "17. Rabi' II 1448",
+        events: []
+    )
+}
+
+private func previewDayViewModel() -> IslamicDaySheetViewModel {
+    IslamicDaySheetViewModel(
+        date: Date(),
+        prayerStore: SharedPrayerTimesStore(),
+        settingsProvider: { AutoPrayerSettings() }
+    )
+}
+
+#Preview("Light") {
+    IslamicDayEventsSheet(day: previewDay(), dayViewModel: previewDayViewModel())
+}
+
+#Preview("Dark") {
+    IslamicDayEventsSheet(day: previewDay(), dayViewModel: previewDayViewModel())
+        .preferredColorScheme(.dark)
 }

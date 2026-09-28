@@ -13,7 +13,7 @@ struct SharedPrayerTimesStore {
     private let key = "prayer_times_cache_v3"
     private let calendar = Calendar(identifier: .gregorian)
 
-    init(suiteName: String = AppGroup.id) {
+    nonisolated init(suiteName: String = AppGroup.id) {
         self.suiteName = suiteName
     }
 

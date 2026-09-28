@@ -37,6 +37,7 @@ struct IslamicHolidayOverviewSheet: View {
                 .padding(.horizontal, 16)
                 .padding(.bottom, 8)
             }
+            .background(Color("AppBackground").ignoresSafeArea())
             .navigationTitle("Besondere Tage")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {

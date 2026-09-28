@@ -26,6 +26,7 @@ struct IslamicCalendarInfoSheet: View {
                 .padding(.top, 8)
                 .padding(.bottom, 10)
             }
+            .background(Color("AppBackground").ignoresSafeArea())
             .navigationTitle("Kalender-Hinweise")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {

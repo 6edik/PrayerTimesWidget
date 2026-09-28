@@ -2,7 +2,7 @@ import Foundation
 
 /// A geographic coordinate pair, kept separate from `CLLocationCoordinate2D`
 /// so it can be `Codable`/`Equatable` without pulling in CoreLocation here.
-struct GeoCoordinate: Codable, Equatable {
+nonisolated struct GeoCoordinate: Codable, Equatable {
     let latitude: Double
     let longitude: Double
 
@@ -27,15 +27,47 @@ struct GeoCoordinate: Codable, Equatable {
     }
 }
 
+/// Where a confirmed `PrayerLocation`'s coordinate actually came from — used
+/// only to choose the right display label ("Stadtkoordinaten" vs. "Aktueller
+/// Standort"), never to change cache-key or request behavior.
+nonisolated enum LocationSource: String, Codable, Equatable {
+    /// City list selection or a resolved/geocoded free-text place.
+    case confirmedPlace
+    /// A live GPS fix.
+    case currentLocation
+}
+
 /// A location the user has actually confirmed — either picked from the
-/// bundled city list or resolved from a live GPS fix. `name` is always the
-/// app's own display text (city list entry or reverse-geocoded label),
-/// never anything read from AlAdhan's response — AlAdhan is not a reliable
-/// source of place names, only of prayer-time calculations for a given
-/// coordinate.
-struct PrayerLocation: Codable, Equatable {
+/// bundled city list, resolved from typed text, or a live GPS fix. `name` is
+/// always the app's own display text (city list entry or reverse-geocoded
+/// label), never anything read from AlAdhan's response — AlAdhan is not a
+/// reliable source of place names, only of prayer-time calculations for a
+/// given coordinate.
+nonisolated struct PrayerLocation: Codable, Equatable {
     var name: String
     var coordinate: GeoCoordinate
+    var source: LocationSource
+
+    nonisolated init(name: String, coordinate: GeoCoordinate, source: LocationSource = .confirmedPlace) {
+        self.name = name
+        self.coordinate = coordinate
+        self.source = source
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case name, coordinate, source
+    }
+
+    // Custom decode so locations persisted before `source` existed still
+    // decode — with `.confirmedPlace` rather than a decode failure that
+    // would reset the whole `AutoPrayerSettings` struct to its default (a
+    // different place than the user saved).
+    nonisolated init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        name = try container.decode(String.self, forKey: .name)
+        coordinate = try container.decode(GeoCoordinate.self, forKey: .coordinate)
+        source = try container.decodeIfPresent(LocationSource.self, forKey: .source) ?? .confirmedPlace
+    }
 
     /// Gelsenkirchen's coordinate from the project's own `DE_cities.json`
     /// (looked up once, verified — not derived from the name at runtime).

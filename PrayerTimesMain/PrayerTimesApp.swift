@@ -5,6 +5,10 @@ import UserNotifications
 @main
 struct PrayerTimesApp: App {
     @Environment(\.scenePhase) private var scenePhase
+    // Single shared instance for the whole app — see AppearanceViewModel's
+    // doc comment for why this lives here and is injected once via
+    // .environmentObject rather than each screen owning its own copy.
+    @StateObject private var appearanceViewModel = AppearanceViewModel()
 
     nonisolated private static let refreshIdentifier = "com.mertgedik.prayertimes.refresh"
 
@@ -18,6 +22,7 @@ struct PrayerTimesApp: App {
     var body: some Scene {
         WindowGroup {
             RootView()
+                .environmentObject(appearanceViewModel)
                 .fontDesign(.serif)
                 .task {
                     Self.scheduleAppRefresh()

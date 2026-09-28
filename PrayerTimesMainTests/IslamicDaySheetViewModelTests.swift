@@ -29,22 +29,30 @@ struct IslamicDaySheetViewModelTests {
     /// state is safe in practice, and a plain class sidesteps the stricter
     /// actor-isolated-conformance checking for a test-only type.
     private final class MockFetcher: SingleDayPrayerTimesFetching, @unchecked Sendable {
-        private(set) var callCount = 0
-        private(set) var capturedDates: [Date] = []
-        private var result: Result<PrayerTimes, Error>
-        private var delayNanoseconds: UInt64
+        // `nonisolated(unsafe)`: this class isn't itself an actor, but
+        // nested inside a @MainActor test struct its members would
+        // otherwise infer @MainActor isolation, forcing every access to
+        // go through the (nonisolated, protocol-required) fetch method
+        // below via `await`. Every test drives this from a single
+        // @MainActor test function with no concurrent access, so the
+        // unsynchronized mutation is safe in practice (see class doc
+        // comment above).
+        nonisolated(unsafe) private(set) var callCount = 0
+        nonisolated(unsafe) private(set) var capturedDates: [Date] = []
+        nonisolated(unsafe) private var result: Result<PrayerTimes, Error>
+        nonisolated(unsafe) private var delayNanoseconds: UInt64
 
-        init(result: Result<PrayerTimes, Error>, delayNanoseconds: UInt64 = 0) {
+        nonisolated init(result: Result<PrayerTimes, Error>, delayNanoseconds: UInt64 = 0) {
             self.result = result
             self.delayNanoseconds = delayNanoseconds
         }
 
-        func configure(result: Result<PrayerTimes, Error>, delayNanoseconds: UInt64 = 0) {
+        nonisolated func configure(result: Result<PrayerTimes, Error>, delayNanoseconds: UInt64 = 0) {
             self.result = result
             self.delayNanoseconds = delayNanoseconds
         }
 
-        func fetchPrayerTimesForSingleDayUncached(settings: PrayerSettings) async throws -> PrayerTimes {
+        nonisolated func fetchPrayerTimesForSingleDayUncached(settings: PrayerSettings) async throws -> PrayerTimes {
             callCount += 1
             capturedDates.append(settings.date)
 
@@ -526,6 +534,89 @@ struct IslamicDaySheetViewModelTests {
         let captured = mock.capturedDates
         #expect(captured.count == 1)
         #expect(captured.first == nearMidnightDate)
+    }
+
+    // MARK: - 9. Fasting duration (adjusted Fajr to adjusted Maghrib)
+
+    @Test func fastingDurationReflectsAdjustedFajrAndMaghribForCachedDay() async throws {
+        let suite = makeSuiteName()
+        defer { cleanup(suite) }
+        let store = SharedPrayerTimesStore(suiteName: suite)
+
+        var adjustments = PrayerAdjustments.zero
+        adjustments.fajr = -10
+        adjustments.maghrib = 10
+        let settings = AutoPrayerSettings(address: "Berlin, DE", method: .ditib, adjustments: adjustments)
+        let iso = isoString(2026, 1, 1)
+        let date = dateFromISO(iso)
+
+        store.replaceCache(with: makeCache(
+            for: settings,
+            days: [PrayerDay(isoDate: iso, hijri: nil, times: makeTimes(fajr: "05:00"))]
+        ))
+
+        let mock = MockFetcher(result: .success(makeTimes()))
+        let viewModel = IslamicDaySheetViewModel(
+            date: date, prayerStore: store, settingsProvider: { settings }, service: mock
+        )
+
+        viewModel.load()
+
+        let duration = try #require(viewModel.fastingDuration)
+        let expectedFajr = PrayerMomentResolver.resolve(
+            isoDate: iso, rawTime: "05:00", adjustmentMinutes: -10, timezoneIdentifier: "Europe/Berlin"
+        )!
+        let expectedMaghrib = PrayerMomentResolver.resolve(
+            isoDate: iso, rawTime: "18:00", adjustmentMinutes: 10, timezoneIdentifier: "Europe/Berlin"
+        )!
+
+        #expect(duration.fajrDate == expectedFajr)
+        #expect(duration.maghribDate == expectedMaghrib)
+    }
+
+    @Test func fastingDurationIsNilForMalformedTimesRatherThanAGuess() async throws {
+        let suite = makeSuiteName()
+        defer { cleanup(suite) }
+        let store = SharedPrayerTimesStore(suiteName: suite)
+
+        let settings = AutoPrayerSettings(address: "Berlin, DE", method: .ditib, adjustments: .zero)
+        let iso = isoString(2026, 1, 1)
+        let date = dateFromISO(iso)
+
+        store.replaceCache(with: makeCache(
+            for: settings,
+            days: [PrayerDay(isoDate: iso, hijri: nil, times: makeTimes(fajr: "not-a-time"))]
+        ))
+
+        let mock = MockFetcher(result: .success(makeTimes()))
+        let viewModel = IslamicDaySheetViewModel(
+            date: date, prayerStore: store, settingsProvider: { settings }, service: mock
+        )
+
+        viewModel.load()
+
+        #expect(viewModel.fastingDuration == nil)
+    }
+
+    @Test func fastingDurationIsClearedWhileANewLoadIsInFlight() async throws {
+        let suite = makeSuiteName()
+        defer { cleanup(suite) }
+        let store = SharedPrayerTimesStore(suiteName: suite)
+
+        let settings = AutoPrayerSettings(address: "Berlin, DE", method: .ditib, adjustments: .zero)
+        let date = dateFromISO(isoString(2026, 1, 1))
+
+        let mock = MockFetcher(result: .success(makeTimes()), delayNanoseconds: 200_000_000)
+        let viewModel = IslamicDaySheetViewModel(
+            date: date, prayerStore: store, settingsProvider: { settings }, service: mock
+        )
+
+        viewModel.load()
+        #expect(viewModel.state == .loading)
+        #expect(viewModel.fastingDuration == nil)
+
+        try await waitUntilSettled(viewModel)
+        #expect(viewModel.fastingDuration != nil)
     }
 
     // MARK: - Helper

@@ -88,17 +88,54 @@ struct HolidayNotificationSetting: Codable, Equatable {
 }
 
 struct NotificationSettings: Codable, Equatable {
-    var fajr = PrayerNotificationSetting()
-    var dhuhr = PrayerNotificationSetting()
-    var asr = PrayerNotificationSetting()
-    var maghrib = PrayerNotificationSetting()
-    var isha = PrayerNotificationSetting()
+    var fajr: PrayerNotificationSetting
+    var dhuhr: PrayerNotificationSetting
+    var asr: PrayerNotificationSetting
+    var maghrib: PrayerNotificationSetting
+    var isha: PrayerNotificationSetting
 
     // Keyed by `MajorIslamicHoliday.rawValue`. Absent entries behave like
     // `HolidayNotificationSetting()` (disabled).
-    var holidays: [String: HolidayNotificationSetting] = [:]
+    var holidays: [String: HolidayNotificationSetting]
 
-    var voluntaryFasting = VoluntaryFastingNotificationSetting()
+    var voluntaryFasting: VoluntaryFastingNotificationSetting
+
+    init(
+        fajr: PrayerNotificationSetting = PrayerNotificationSetting(),
+        dhuhr: PrayerNotificationSetting = PrayerNotificationSetting(),
+        asr: PrayerNotificationSetting = PrayerNotificationSetting(),
+        maghrib: PrayerNotificationSetting = PrayerNotificationSetting(),
+        isha: PrayerNotificationSetting = PrayerNotificationSetting(),
+        holidays: [String: HolidayNotificationSetting] = [:],
+        voluntaryFasting: VoluntaryFastingNotificationSetting = VoluntaryFastingNotificationSetting()
+    ) {
+        self.fajr = fajr
+        self.dhuhr = dhuhr
+        self.asr = asr
+        self.maghrib = maghrib
+        self.isha = isha
+        self.holidays = holidays
+        self.voluntaryFasting = voluntaryFasting
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case fajr, dhuhr, asr, maghrib, isha, holidays, voluntaryFasting
+    }
+
+    // Custom decode so settings saved before `holidays`/`voluntaryFasting`
+    // existed still decode — with their defaults — instead of a decode
+    // failure (missing key) that would silently reset every other
+    // already-configured prayer notification setting too.
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        fajr = try container.decodeIfPresent(PrayerNotificationSetting.self, forKey: .fajr) ?? PrayerNotificationSetting()
+        dhuhr = try container.decodeIfPresent(PrayerNotificationSetting.self, forKey: .dhuhr) ?? PrayerNotificationSetting()
+        asr = try container.decodeIfPresent(PrayerNotificationSetting.self, forKey: .asr) ?? PrayerNotificationSetting()
+        maghrib = try container.decodeIfPresent(PrayerNotificationSetting.self, forKey: .maghrib) ?? PrayerNotificationSetting()
+        isha = try container.decodeIfPresent(PrayerNotificationSetting.self, forKey: .isha) ?? PrayerNotificationSetting()
+        holidays = try container.decodeIfPresent([String: HolidayNotificationSetting].self, forKey: .holidays) ?? [:]
+        voluntaryFasting = try container.decodeIfPresent(VoluntaryFastingNotificationSetting.self, forKey: .voluntaryFasting) ?? VoluntaryFastingNotificationSetting()
+    }
 
     static let zero = NotificationSettings()
 

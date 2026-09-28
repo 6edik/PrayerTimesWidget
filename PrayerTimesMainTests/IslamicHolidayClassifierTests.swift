@@ -109,9 +109,12 @@ struct IslamicHolidayClassifierTests {
         let store = SharedIslamicCalendarStore(suiteName: suite)
 
         // Simulates a cache written before the filter existed — the store
-        // itself is "dumb" and accepts whatever it's given.
+        // itself is "dumb" and accepts whatever it's given. "urs" uses a
+        // non-major hijri key (matching the pattern in
+        // filterRelevantDropsUrsAndBirthEntries) so it's the one entry
+        // migration is expected to drop, leaving only eidAlFitr.
         let eidAlFitr = makeSpecialDay(hijriDay: "1", hijriMonthNumber: 10)
-        let urs = makeSpecialDay(hijriDay: "1", hijriMonthNumber: 10)
+        let urs = makeSpecialDay(hijriDay: "6", hijriMonthNumber: 3)
         store.saveYear(2026, days: [eidAlFitr, urs])
         #expect(store.loadYear(2026)?.count == 2)
 

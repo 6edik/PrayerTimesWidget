@@ -13,6 +13,8 @@ struct AppPageContainer<Content: View>: View {
             .padding(.top)
         }
         .contentMargins(.top, 0, for: .scrollContent)
+        .scrollContentBackground(.hidden)
+        .background(Color("AppBackground").ignoresSafeArea())
         .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)
     }

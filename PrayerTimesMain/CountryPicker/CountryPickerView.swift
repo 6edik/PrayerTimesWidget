@@ -31,6 +31,8 @@ struct CountryPickerView: View {
             }
             .foregroundStyle(.primary)
         }
+        .scrollContentBackground(.hidden)
+        .background(Color("AppBackground").ignoresSafeArea())
         .navigationTitle("Land")
         .searchable(text: $searchText, prompt: "Land suchen")
     }

@@ -84,10 +84,14 @@ struct NotificationSchedulerFastingTests {
         return candidate
     }
 
-    private func makeAutoSettings(address: String = "Berlin, DE", adjustments: PrayerAdjustments = .zero) -> AutoPrayerSettings {
+    private func makeAutoSettings(
+        address: String = "Berlin, DE",
+        coordinate: GeoCoordinate = GeoCoordinate(latitude: 52.52, longitude: 13.405),
+        adjustments: PrayerAdjustments = .zero
+    ) -> AutoPrayerSettings {
         AutoPrayerSettings(
             address: address,
-            location: PrayerLocation(name: address, coordinate: GeoCoordinate(latitude: 52.52, longitude: 13.405)),
+            location: PrayerLocation(name: address, coordinate: coordinate),
             method: .ditib,
             adjustments: adjustments
         )
@@ -627,7 +631,11 @@ struct NotificationSchedulerFastingTests {
         let calendarStore = SharedIslamicCalendarStore(suiteName: suite3)
 
         let berlin = TimeZone(identifier: "Europe/Berlin")!
-        let oldSettings = makeAutoSettings(address: "Essen, DE")
+        // Distinct coordinates (not the helper's shared default) so the
+        // two settings genuinely produce different LocationKeys — the
+        // point of this test is a real location change, which a shared
+        // fixed coordinate would silently defeat.
+        let oldSettings = makeAutoSettings(address: "Essen, DE", coordinate: GeoCoordinate(latitude: 51.4508, longitude: 7.0131))
 
         let monday = nextSafeWeekday(2, onOrAfter: Date(), timeZone: berlin)
         let sunday = gregorianCalendar(timeZone: berlin).date(byAdding: .day, value: -1, to: monday)!
@@ -639,7 +647,7 @@ struct NotificationSchedulerFastingTests {
 
         // Settings now reflect a *different* (new) city — the old cache
         // above must not be treated as valid for it.
-        let newSettings = makeAutoSettings(address: "Munich, DE")
+        let newSettings = makeAutoSettings(address: "Munich, DE", coordinate: GeoCoordinate(latitude: 48.1351, longitude: 11.5820))
         settingsStore.saveAutoSettings(newSettings)
 
         let scheduler = makeScheduler(timesStore: timesStore, settingsStore: settingsStore, calendarStore: calendarStore)

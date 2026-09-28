@@ -453,3 +453,27 @@ private struct DiamondMarker: Shape {
         return path
     }
 }
+
+#Preview("Qibla view (Light)") {
+    QiblaView(isActivePage: true)
+        .environmentObject(AppearanceViewModel())
+}
+
+#Preview("Qibla view (Dark)") {
+    QiblaView(isActivePage: true)
+        .environmentObject(AppearanceViewModel())
+        .preferredColorScheme(.dark)
+}
+
+// Bypasses the location-permission gate so the compass image itself (and
+// its light/dark asset variants) can be checked directly.
+#Preview("Compass dial (Light)") {
+    QiblaCompassDial(needleAnimator: QiblaNeedleAnimator(), qiblaBearing: 120, compassSize: 312)
+        .padding(40)
+}
+
+#Preview("Compass dial (Dark)") {
+    QiblaCompassDial(needleAnimator: QiblaNeedleAnimator(), qiblaBearing: 120, compassSize: 312)
+        .padding(40)
+        .preferredColorScheme(.dark)
+}

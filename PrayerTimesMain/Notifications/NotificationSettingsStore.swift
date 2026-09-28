@@ -9,7 +9,7 @@ struct NotificationSettingsStore {
     private var defaults: UserDefaults? { UserDefaults(suiteName: suiteName) }
     private let key = "notification_settings_v1"
 
-    init(suiteName: String = AppGroup.id) {
+    nonisolated init(suiteName: String = AppGroup.id) {
         self.suiteName = suiteName
     }
 

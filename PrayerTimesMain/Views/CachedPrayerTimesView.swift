@@ -20,6 +20,13 @@ struct CachedPrayerTimesView: View {
                 if viewModel.hasCachedData {
                     Section("Cache-Details") {
                         detailRow("Ort", viewModel.cacheLocationDisplay)
+
+                        if let coordinateDisplay = viewModel.cacheCoordinateDisplay {
+                            Text(coordinateDisplay)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+
                         detailRow("Methode", viewModel.cacheMethodDisplay)
                         detailRow("Gespeicherte Tage", "\(viewModel.days.count)")
                         detailRow("Letzter erfolgreicher Abruf", formattedFetchedAt)
@@ -63,6 +70,8 @@ struct CachedPrayerTimesView: View {
                     }
                 }
             }
+            .scrollContentBackground(.hidden)
+            .background(Color("AppBackground").ignoresSafeArea())
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
                     Button("Schließen") {
@@ -199,6 +208,8 @@ private struct CachedPrayerDayDetailView: View {
                 }
             }
         }
+        .scrollContentBackground(.hidden)
+        .background(Color("AppBackground").ignoresSafeArea())
         .navigationTitle(day.isoDate)
         .navigationBarTitleDisplayMode(.inline)
     }

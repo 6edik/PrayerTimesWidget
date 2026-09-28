@@ -21,6 +21,11 @@ final class CachedPrayerTimesViewModel: ObservableObject {
 
     @Published private(set) var days: [DayEntry] = []
     @Published private(set) var cacheLocationDisplay = "--"
+    // The current, confirmed settings' coordinate line (e.g.
+    // "Stadtkoordinaten: 51,5170° N · 7,1000° O") — only populated when the
+    // cache actually matches those settings, so a stale/mismatched cache
+    // never shows a coordinate line that belongs to a different place.
+    @Published private(set) var cacheCoordinateDisplay: String?
     @Published private(set) var cacheMethodDisplay = "--"
     @Published private(set) var fetchedAt: Date?
     @Published private(set) var locationMismatch = false
@@ -85,6 +90,7 @@ final class CachedPrayerTimesViewModel: ObservableObject {
 
         guard !days.isEmpty else {
             cacheLocationDisplay = "--"
+            cacheCoordinateDisplay = nil
             cacheMethodDisplay = "--"
             fetchedAt = nil
             locationMismatch = false
@@ -104,6 +110,10 @@ final class CachedPrayerTimesViewModel: ObservableObject {
         cacheLocationDisplay = locationMismatch
             ? Self.describeLocationKey(cache.locationKey)
             : settings.address
+
+        cacheCoordinateDisplay = (!locationMismatch)
+            ? settings.location.map { LocationDisplayFormatter.line(for: $0) }
+            : nil
 
         cacheMethodDisplay = methodMismatch
             ? Self.describeMethodKey(cache.methodKey)

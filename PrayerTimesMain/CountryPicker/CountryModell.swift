@@ -9,7 +9,7 @@ struct CountryItem: Identifiable, Hashable {
 }
 
 enum CountryList {
-    static let all: [CountryItem] = {
+    nonisolated static let all: [CountryItem] = {
         let locale = Locale(identifier: "de_DE")
 
         let codes: [String]

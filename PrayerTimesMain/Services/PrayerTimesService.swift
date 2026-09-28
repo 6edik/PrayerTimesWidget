@@ -7,6 +7,7 @@ enum PrayerTimesServiceError: LocalizedError {
     case emptyCalendar
     case locationMismatch
     case missingTimezone
+    case missingCoordinate
 
     nonisolated var errorDescription: String? {
         switch self {
@@ -22,6 +23,8 @@ enum PrayerTimesServiceError: LocalizedError {
             return "Die Antwort bezieht sich auf einen anderen Ort als angefragt. Bitte erneut versuchen."
         case .missingTimezone:
             return "Die Antwort enthält keine gültige Zeitzone."
+        case .missingCoordinate:
+            return "Für diesen Ort liegen keine bestätigten Koordinaten vor. Bitte Ort in den Einstellungen erneut bestätigen."
         }
     }
 }
@@ -37,8 +40,8 @@ protocol SingleDayPrayerTimesFetching: Sendable {
 
 struct PrayerTimesService: SingleDayPrayerTimesFetching {
     // Requested coordinate vs. the coordinate AlAdhan's response metadata
-    // actually reports back must agree closely — we send an exact
-    // coordinate now (not an address for AlAdhan to geocode itself), so any
+    // actually reports back must agree closely — we always send an exact
+    // coordinate (never an address for AlAdhan to geocode itself), so any
     // real deviation means something went wrong rather than "a nearby
     // match". This margin (~5.5km) is generous enough for rounding but
     // tight enough to catch a genuinely wrong location.
@@ -47,19 +50,18 @@ struct PrayerTimesService: SingleDayPrayerTimesFetching {
     nonisolated init() {}
 
     nonisolated func fetchPrayerTimesForSingleDayUncached(settings: PrayerSettings) async throws -> PrayerTimes {
+        guard let location = settings.location, location.coordinate.isPlausible else {
+            throw PrayerTimesServiceError.missingCoordinate
+        }
+
         let baseURL = "https://api.aladhan.com/v1"
         let datePath = apiDateString(from: settings.date)
 
-        guard var components = locationAwareComponents(
-            baseURL: baseURL,
-            addressPath: "timingsByAddress/\(datePath)",
-            coordinatePath: "timings/\(datePath)",
-            settings: settings
-        ) else {
+        guard var components = URLComponents(string: "\(baseURL)/timings/\(datePath)") else {
             throw PrayerTimesServiceError.invalidURL
         }
 
-        components.queryItems = queryItems(for: settings)
+        components.queryItems = queryItems(location: location, method: settings.method)
 
         guard let url = components.url else {
             throw PrayerTimesServiceError.invalidURL
@@ -82,7 +84,7 @@ struct PrayerTimesService: SingleDayPrayerTimesFetching {
         let decoded = try JSONDecoder().decode(PrayerTimesResponse.self, from: data)
         let item = decoded.data
 
-        try validate(meta: item.meta, against: settings.location)
+        try validate(meta: item.meta, against: location)
 
         return PrayerTimes(
             fajr: cleanTime(item.timings.fajr),
@@ -113,6 +115,10 @@ struct PrayerTimesService: SingleDayPrayerTimesFetching {
         referenceDate: Date = Date(),
         coverageDays: Int = PrayerCachePolicy.totalDays
     ) async throws -> PrayerTimesCache {
+        guard let location = settings.location, location.coordinate.isPlausible else {
+            throw PrayerTimesServiceError.missingCoordinate
+        }
+
         let calendar = Calendar(identifier: .gregorian)
         let start = calendar.startOfDay(for: referenceDate)
         let end = calendar.date(byAdding: .day, value: coverageDays - 1, to: start) ?? start
@@ -125,7 +131,8 @@ struct PrayerTimesService: SingleDayPrayerTimesFetching {
             let monthDays = try await fetchCalendarMonth(
                 year: month.year,
                 month: month.month,
-                settings: settings
+                location: location,
+                method: settings.method
             )
             allDays.append(contentsOf: monthDays)
         }
@@ -162,20 +169,16 @@ struct PrayerTimesService: SingleDayPrayerTimesFetching {
     nonisolated private func fetchCalendarMonth(
         year: Int,
         month: Int,
-        settings: PrayerSettings
+        location: PrayerLocation,
+        method: PrayerCalculationMethod
     ) async throws -> [PrayerDay] {
         let baseURL = "https://api.aladhan.com/v1"
 
-        guard var components = locationAwareComponents(
-            baseURL: baseURL,
-            addressPath: "calendarByAddress/\(year)/\(month)",
-            coordinatePath: "calendar/\(year)/\(month)",
-            settings: settings
-        ) else {
+        guard var components = URLComponents(string: "\(baseURL)/calendar/\(year)/\(month)") else {
             throw PrayerTimesServiceError.invalidURL
         }
 
-        components.queryItems = queryItems(for: settings)
+        components.queryItems = queryItems(location: location, method: method)
 
         guard let url = components.url else {
             throw PrayerTimesServiceError.invalidURL
@@ -232,7 +235,7 @@ struct PrayerTimesService: SingleDayPrayerTimesFetching {
         }
 
         if let firstDay = decoded.data.first {
-            try validate(meta: firstDay.meta, against: settings.location)
+            try validate(meta: firstDay.meta, against: location)
         }
 
         return await withTaskGroup(of: PrayerDay.self) { group in
@@ -268,51 +271,22 @@ struct PrayerTimesService: SingleDayPrayerTimesFetching {
         }
     }
 
-    /// Builds the request URL for either the coordinate-based endpoint
-    /// (when `settings.location` has a plausible coordinate) or the
-    /// existing address-based endpoint otherwise. Address-based stays the
-    /// fallback for legacy settings (saved before locations were tracked)
-    /// and free-text addresses the app can't resolve to a coordinate
-    /// itself — never a coordinate guessed from the name.
-    nonisolated private func locationAwareComponents(
-        baseURL: String,
-        addressPath: String,
-        coordinatePath: String,
-        settings: PrayerSettings
-    ) -> URLComponents? {
-        let path = usesCoordinate(settings) ? coordinatePath : addressPath
-        return URLComponents(string: "\(baseURL)/\(path)")
-    }
-
-    nonisolated private func queryItems(for settings: PrayerSettings) -> [URLQueryItem] {
-        if usesCoordinate(settings), let location = settings.location {
-            return [
-                URLQueryItem(name: "latitude", value: String(location.coordinate.latitude)),
-                URLQueryItem(name: "longitude", value: String(location.coordinate.longitude)),
-                URLQueryItem(name: "method", value: settings.method.apiValue)
-            ]
-        }
-
-        return [
-            URLQueryItem(name: "address", value: settings.address),
-            URLQueryItem(name: "method", value: settings.method.apiValue)
+    nonisolated private func queryItems(location: PrayerLocation, method: PrayerCalculationMethod) -> [URLQueryItem] {
+        [
+            URLQueryItem(name: "latitude", value: String(location.coordinate.latitude)),
+            URLQueryItem(name: "longitude", value: String(location.coordinate.longitude)),
+            URLQueryItem(name: "method", value: method.apiValue)
         ]
-    }
-
-    nonisolated private func usesCoordinate(_ settings: PrayerSettings) -> Bool {
-        settings.location?.coordinate.isPlausible == true
     }
 
     /// Decision 6: never silently trust AlAdhan for a place name, but do
     /// verify its response metadata actually corresponds to the coordinate
     /// we asked for — if it clearly doesn't (or the timezone is missing),
     /// treat that as an error instead of quietly showing wrong times.
-    nonisolated private func validate(meta: PrayerMeta, against location: PrayerLocation?) throws {
+    nonisolated private func validate(meta: PrayerMeta, against location: PrayerLocation) throws {
         guard meta.timezone.trimmingCharacters(in: .whitespaces).isEmpty == false else {
             throw PrayerTimesServiceError.missingTimezone
         }
-
-        guard let location, location.coordinate.isPlausible else { return }
 
         let latDelta = abs(meta.latitude - location.coordinate.latitude)
         let lonDelta = abs(meta.longitude - location.coordinate.longitude)

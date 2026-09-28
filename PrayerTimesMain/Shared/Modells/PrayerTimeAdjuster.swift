@@ -8,7 +8,7 @@ struct PrayerAdjustments: Codable, Equatable {
     var maghrib: Int = 0
     var isha: Int = 0
 
-    static let zero = PrayerAdjustments()
+    nonisolated static let zero = PrayerAdjustments()
 }
 
 /// Per-prayer day offset produced by an adjustment that pushed a time across
@@ -23,7 +23,7 @@ struct PrayerDayOffsets: Equatable {
     var maghrib = 0
     var isha = 0
 
-    static let zero = PrayerDayOffsets()
+    nonisolated static let zero = PrayerDayOffsets()
 }
 
 enum PrayerTimeAdjuster {

@@ -72,6 +72,8 @@ struct NotificationSettingsView: View {
                         .foregroundStyle(.secondary)
                 }
             }
+            .scrollContentBackground(.hidden)
+            .background(Color("AppBackground").ignoresSafeArea())
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
                     Button("Schließen") { dismiss() }
@@ -223,6 +225,8 @@ private struct PrayerNotificationDetailView: View {
                 }
             }
         }
+        .scrollContentBackground(.hidden)
+        .background(Color("AppBackground").ignoresSafeArea())
         .navigationTitle(kind.displayName)
         .navigationBarTitleDisplayMode(.inline)
     }
@@ -270,6 +274,8 @@ private struct VoluntaryFastingNotificationDetailView: View {
             .font(.caption)
             .foregroundStyle(.secondary)
         }
+        .scrollContentBackground(.hidden)
+        .background(Color("AppBackground").ignoresSafeArea())
         .navigationTitle("Freiwilliges Fasten")
         .navigationBarTitleDisplayMode(.inline)
     }
@@ -320,7 +326,18 @@ private struct HolidayNotificationDetailView: View {
                 }
             }
         }
+        .scrollContentBackground(.hidden)
+        .background(Color("AppBackground").ignoresSafeArea())
         .navigationTitle(holiday.displayName)
         .navigationBarTitleDisplayMode(.inline)
     }
+}
+
+#Preview("Light") {
+    NotificationSettingsView()
+}
+
+#Preview("Dark") {
+    NotificationSettingsView()
+        .preferredColorScheme(.dark)
 }

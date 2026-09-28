@@ -8,15 +8,21 @@ final class AutoPrayerViewModel: ObservableObject {
     @Published private(set) var todayTimes: PrayerTimes?
     @Published private(set) var isLoading = false
     @Published var errorMessage: String?
+    // Set by `LegacyLocationMigrator` when a saved address had no
+    // coordinate and couldn't be matched unambiguously against the local
+    // city list. Cleared as soon as a real coordinate is confirmed/saved.
+    @Published private(set) var needsLocationConfirmation: Bool
 
     private let settingsStore: SharedPrayerSettingsStore
     private let timesStore: SharedPrayerTimesStore
     private let refreshCoordinator: PrayerRefreshCoordinator
+    private let legacyMigrator: LegacyLocationMigrator
 
     init(
         settingsStore: SharedPrayerSettingsStore? = nil,
         timesStore: SharedPrayerTimesStore? = nil,
-        refreshCoordinator: PrayerRefreshCoordinator? = nil
+        refreshCoordinator: PrayerRefreshCoordinator? = nil,
+        legacyMigrator: LegacyLocationMigrator? = nil
     ) {
         let resolvedSettingsStore = settingsStore ?? SharedPrayerSettingsStore()
         let resolvedTimesStore = timesStore ?? SharedPrayerTimesStore()
@@ -24,23 +30,37 @@ final class AutoPrayerViewModel: ObservableObject {
         self.settingsStore = resolvedSettingsStore
         self.timesStore = resolvedTimesStore
         self.refreshCoordinator = refreshCoordinator ?? PrayerRefreshCoordinator(store: resolvedTimesStore)
+        self.legacyMigrator = legacyMigrator ?? LegacyLocationMigrator(
+            settingsStore: resolvedSettingsStore,
+            timesStore: resolvedTimesStore
+        )
         self.autoSettings = resolvedSettingsStore.loadAutoSettings()
+        self.needsLocationConfirmation = resolvedSettingsStore.needsLocationConfirmation()
 
         let rawToday = resolvedTimesStore.load(for: Date(), settings: resolvedSettingsStore.loadAutoSettings())
         self.todayTimes = rawToday?.applyingAdjustments(self.autoSettings.adjustments)
+
+        let migrator = self.legacyMigrator
+        Task { [weak self] in
+            await migrator.migrateIfNeeded()
+            self?.reloadLocalState()
+        }
     }
 
     func reloadLocalState() {
         let latestSettings = settingsStore.loadAutoSettings()
         autoSettings = latestSettings
+        needsLocationConfirmation = settingsStore.needsLocationConfirmation()
 
         let rawToday = timesStore.load(for: Date(), settings: latestSettings)
         todayTimes = rawToday?.applyingAdjustments(latestSettings.adjustments)
     }
 
-    /// - Parameter location: the coordinate confirmed by the city list or
-    ///   GPS for `address`, if any. Pass `nil` for free-text addresses —
-    ///   never guess a coordinate from the name here.
+    /// - Parameter location: the coordinate confirmed by the city list,
+    ///   GPS, or a resolved geocoding result for `address`. The UI is
+    ///   expected to require this before allowing "Speichern" — passing
+    ///   `nil` here leaves the previous location's cache/coordinate state
+    ///   untouched rather than guessing one.
     func saveSettings(
         address: String,
         location: PrayerLocation?,
@@ -78,6 +98,14 @@ final class AutoPrayerViewModel: ObservableObject {
 
         settingsStore.saveAutoSettings(updated)
         autoSettings = updated
+
+        // A freshly saved, coordinate-confirmed location always resolves
+        // whatever previously required re-confirmation — never wait for
+        // the next migration pass to clear the banner.
+        if newLocation?.coordinate.isPlausible == true {
+            settingsStore.clearNeedsLocationConfirmation()
+            needsLocationConfirmation = false
+        }
 
         // Reload on every save, not just when the adjustments changed: a
         // location/method change invalidates the widget's cache too, and

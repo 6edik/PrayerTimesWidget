@@ -6,6 +6,7 @@ struct PrayerTimesHomeView: View {
     private let store = SharedPrayerTimesStore()
     private let settingsStore = SharedPrayerSettingsStore()
     private let refreshCoordinator = PrayerRefreshCoordinator()
+    private let legacyMigrator = LegacyLocationMigrator()
 
     private static let placeholderTimes = PrayerTimes(
         fajr: "--:--",
@@ -24,7 +25,9 @@ struct PrayerTimesHomeView: View {
     @State private var prayerTimes = PrayerTimesHomeView.placeholderTimes
 
     @State private var currentAddress = "--"
+    @State private var currentLocation: PrayerLocation?
     @State private var currentMethod = "--"
+    @State private var needsLocationConfirmation = false
     @State private var isLoading = false
     @State private var errorMessage: String?
     @State private var activeSheet: ActiveSheet?
@@ -87,6 +90,23 @@ struct PrayerTimesHomeView: View {
                 Text(currentAddress)
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
+
+                if let currentLocation, currentLocation.coordinate.isPlausible {
+                    Text(LocationDisplayFormatter.line(for: currentLocation))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
+                if needsLocationConfirmation {
+                    Button {
+                        activeSheet = .settings
+                    } label: {
+                        Label("Ort erneut bestätigen", systemImage: "exclamationmark.triangle.fill")
+                            .font(.footnote)
+                    }
+                    .buttonStyle(.bordered)
+                    .tint(.orange)
+                }
 
                 Text(currentMethod)
                     .font(.subheadline)
@@ -182,6 +202,7 @@ struct PrayerTimesHomeView: View {
         .task {
             guard !hasLoadedInitially else { return }
             hasLoadedInitially = true
+            await legacyMigrator.migrateIfNeeded()
             await loadPrayerTimes(source: .appStart)
         }
         .onChange(of: scenePhase) { _, newPhase in
@@ -201,7 +222,9 @@ struct PrayerTimesHomeView: View {
         let autoSettings = settingsStore.loadAutoSettings()
 
         currentAddress = autoSettings.address
+        currentLocation = autoSettings.location
         currentMethod = autoSettings.method.title
+        needsLocationConfirmation = settingsStore.needsLocationConfirmation()
 
         // Show whatever is cached for the *current* settings right away.
         // If there is nothing cached for them (e.g. right after switching
@@ -209,6 +232,14 @@ struct PrayerTimesHomeView: View {
         // instead of leaving the previous location's times on screen under
         // the new address label.
         applyCachedTimes(autoSettings: autoSettings)
+
+        // Without a confirmed coordinate there is nothing to fetch — never
+        // fall back to an address-based request. The banner above already
+        // tells the user to re-confirm the place.
+        guard autoSettings.location?.coordinate.isPlausible == true else {
+            errorMessage = nil
+            return
+        }
 
         let shouldFetch = forceNetwork || refreshCoordinator.needsRefresh(settings: autoSettings)
 

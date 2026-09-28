@@ -340,38 +340,27 @@ struct NotificationScheduler {
             let fireDate = eveMaghrib.addingTimeInterval(Double(fastingSettings.minutesAfterMaghrib) * 60)
 
             // The "Fajr X bis Maghrib Y – Z Std." sentence is for the
-            // fasting day itself, computed from full Dates (via
-            // PrayerMomentResolver, so a midnight-crossing adjustment is
-            // handled correctly) rather than a naive HH:mm string diff.
-            // Both the displayed clock times *and* the duration come from
-            // these same resolved Dates — if either fails to resolve (a
-            // malformed stored time, an invalid timezone), the entire
-            // sentence is omitted rather than showing a broken clock time
-            // next to no duration, or inventing either one. The reminder
-            // still fires with just the plain occasion sentence in that
-            // case (documented in the settings UI's "Hinweis" section).
+            // fasting day itself, via the shared `FastingDurationCalculator`
+            // (full Dates through `PrayerMomentResolver`, so a midnight-
+            // crossing adjustment is handled correctly, never a naive HH:mm
+            // string diff) — the same calculation the calendar day sheet
+            // uses, so the two can never quietly disagree. If either time
+            // fails to resolve (a malformed stored time, an invalid
+            // timezone), the entire sentence is omitted rather than showing
+            // a broken clock time next to no duration, or inventing either
+            // one. The reminder still fires with just the plain occasion
+            // sentence in that case (documented in the settings UI's
+            // "Hinweis" section).
             let timesSentence: String?
-            if
-                let fajrDate = PrayerMomentResolver.resolve(
-                    isoDate: iso, rawTime: day.times.fajr,
-                    adjustmentMinutes: autoSettings.adjustments.fajr, timezoneIdentifier: day.times.timezone
-                ),
-                let maghribDate = PrayerMomentResolver.resolve(
-                    isoDate: iso, rawTime: day.times.maghrib,
-                    adjustmentMinutes: autoSettings.adjustments.maghrib, timezoneIdentifier: day.times.timezone
-                ),
-                maghribDate > fajrDate
-            {
-                let clockFormatter = DateFormatter()
-                clockFormatter.calendar = gregorian
-                clockFormatter.locale = Locale(identifier: "en_US_POSIX")
-                clockFormatter.timeZone = locationTimeZone
-                clockFormatter.dateFormat = "HH:mm"
-
+            if let fastingResult = FastingDurationCalculator.result(
+                isoDate: iso, times: day.times, adjustments: autoSettings.adjustments
+            ) {
+                let fajrClock = FastingDurationCalculator.clockString(fastingResult.fajrDate, timezoneIdentifier: fastingResult.timezoneIdentifier)
+                let maghribClock = FastingDurationCalculator.clockString(fastingResult.maghribDate, timezoneIdentifier: fastingResult.timezoneIdentifier)
                 // `duration` already ends in "Std." or "Min." — no extra
                 // trailing period, or the sentence would end in "..".
-                let duration = Self.formattedDuration(from: fajrDate, to: maghribDate)
-                timesSentence = "Voraussichtliche Fastenzeit: Fajr \(clockFormatter.string(from: fajrDate)) bis Maghrib \(clockFormatter.string(from: maghribDate)) – \(duration)"
+                let duration = FastingDurationCalculator.formattedDuration(fastingResult.duration)
+                timesSentence = "Voraussichtliche Fastenzeit: Fajr \(fajrClock) bis Maghrib \(maghribClock) – \(duration)"
             } else {
                 timesSentence = nil
             }
@@ -392,15 +381,6 @@ struct NotificationScheduler {
         let occasionSentence = "Morgen ist \(occasions.displayLabel)."
         guard let timesSentence else { return occasionSentence }
         return "\(occasionSentence) \(timesSentence)"
-    }
-
-    /// "15 Std. 40 Min." — or just "15 Std." when there are no leftover
-    /// minutes, matching the spec's own example text.
-    private static func formattedDuration(from start: Date, to end: Date) -> String {
-        let totalMinutes = Int((end.timeIntervalSince(start) / 60).rounded())
-        let hours = totalMinutes / 60
-        let minutes = totalMinutes % 60
-        return minutes == 0 ? "\(hours) Std." : "\(hours) Std. \(minutes) Min."
     }
 
     /// The ISO ("yyyy-MM-dd") date string one calendar day before `iso`,

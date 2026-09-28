@@ -1,6 +1,6 @@
 import Foundation
 
-struct PrayerSettings: Codable {
+nonisolated struct PrayerSettings: Codable {
     let address: String
     // Confirmed coordinate for this request, if one is available (city
     // list selection or GPS fix). When nil, callers fall back to the
