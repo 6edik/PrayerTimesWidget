@@ -63,6 +63,8 @@ struct CachedPrayerTimesView: View {
                     }
                 }
             }
+            .scrollContentBackground(.hidden)
+            .background(Color("AppBackground").ignoresSafeArea())
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
                     Button("Schließen") {
@@ -199,6 +201,8 @@ private struct CachedPrayerDayDetailView: View {
                 }
             }
         }
+        .scrollContentBackground(.hidden)
+        .background(Color("AppBackground").ignoresSafeArea())
         .navigationTitle(day.isoDate)
         .navigationBarTitleDisplayMode(.inline)
     }

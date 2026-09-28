@@ -18,6 +18,7 @@ struct IslamicDayEventsSheet: View {
             }
             .padding()
         }
+        .background(Color("AppBackground").ignoresSafeArea())
         .task {
             dayViewModel.load()
         }
@@ -159,4 +160,29 @@ struct IslamicDayEventsSheet: View {
         formatter.dateStyle = .long
         return formatter.string(from: date)
     }
+}
+
+private func previewDay() -> IslamicDaySheetData {
+    IslamicDaySheetData(
+        date: Date(),
+        hijriText: "17. Rabi' II 1448",
+        events: []
+    )
+}
+
+private func previewDayViewModel() -> IslamicDaySheetViewModel {
+    IslamicDaySheetViewModel(
+        date: Date(),
+        prayerStore: SharedPrayerTimesStore(),
+        settingsProvider: { AutoPrayerSettings() }
+    )
+}
+
+#Preview("Light") {
+    IslamicDayEventsSheet(day: previewDay(), dayViewModel: previewDayViewModel())
+}
+
+#Preview("Dark") {
+    IslamicDayEventsSheet(day: previewDay(), dayViewModel: previewDayViewModel())
+        .preferredColorScheme(.dark)
 }

@@ -68,8 +68,10 @@ struct CityPickerView: View {
                         }
                     }
                     .listStyle(.plain)
+                    .scrollContentBackground(.hidden)
                 }
             }
+            .background(Color("AppBackground").ignoresSafeArea())
             .navigationTitle("Stadt wählen")
             .navigationBarTitleDisplayMode(.inline)
             .searchable(text: $viewModel.searchText, prompt: "Stadt suchen (DE)")

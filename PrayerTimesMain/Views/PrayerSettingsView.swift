@@ -4,6 +4,7 @@ import Combine
 
 struct PrayerSettingsView: View {
     @Environment(\.dismiss) private var dismiss
+    @EnvironmentObject private var appearance: AppearanceViewModel
     @StateObject private var viewModel = AutoPrayerViewModel()
     @StateObject private var locationHelper = PrayerLocationPickerViewModel()
 
@@ -81,6 +82,10 @@ struct PrayerSettingsView: View {
                 .fontDesign(nil)
 
             Form {
+                Section("Darstellung") {
+                    Toggle("Dunkelmodus", isOn: $appearance.isDarkModeEnabled)
+                }
+
                 Section("Gebetsprofil") {
                     Picker("Methode", selection: $method) {
                         ForEach(PrayerCalculationMethod.allCases) { item in
@@ -178,6 +183,8 @@ struct PrayerSettingsView: View {
                     }
                 }
             }
+            .scrollContentBackground(.hidden)
+            .background(Color("AppBackground").ignoresSafeArea())
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
                     Button("Schließen") {
@@ -330,4 +337,17 @@ struct PrayerSettingsView: View {
     private func countryNameOnly(for code: String) -> String? {
         CountryList.all.first(where: { $0.code == code })?.name
     }
+}
+
+#Preview("Light") {
+    PrayerSettingsView(onSaved: {})
+        .environmentObject(AppearanceViewModel())
+}
+
+#Preview("Dark") {
+    let appearance = AppearanceViewModel()
+    appearance.isDarkModeEnabled = true
+    return PrayerSettingsView(onSaved: {})
+        .environmentObject(appearance)
+        .preferredColorScheme(.dark)
 }

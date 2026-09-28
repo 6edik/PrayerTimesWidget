@@ -240,3 +240,12 @@ struct IslamicCalendarView: View {
         )
     }
 }
+
+#Preview("Light") {
+    IslamicCalendarView(settingsProvider: { AutoPrayerSettings() })
+}
+
+#Preview("Dark") {
+    IslamicCalendarView(settingsProvider: { AutoPrayerSettings() })
+        .preferredColorScheme(.dark)
+}

@@ -24,6 +24,7 @@ struct IslamicCalendarHadithSheet: View {
                 .padding(.top, 8)
                 .padding(.bottom, 12)
             }
+            .background(Color("AppBackground").ignoresSafeArea())
             .navigationTitle("Ahadith zum Fasten")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
