@@ -219,4 +219,17 @@ struct SharedPrayerTimesStore {
         let cache = loadValidatedCache(settings: settings)
         return Dictionary(uniqueKeysWithValues: cache.days.map { ($0.isoDate, $0) })
     }
+
+    /// Returns the cache exactly as stored on disk, without validating it
+    /// against any particular `AutoPrayerSettings` — unlike every other
+    /// accessor above, this can return data for a location/method that no
+    /// longer matches the current settings (`loadValidatedCache` would
+    /// silently collapse that to `.empty`). Only the "Gespeicherte
+    /// Gebetszeiten" inspector should call this: it needs to show — and
+    /// explain mismatches for — whatever is actually persisted, not just
+    /// what would currently be served. Read-only, single decode; never
+    /// writes anything.
+    func snapshot() -> PrayerTimesCache {
+        loadRawCache()
+    }
 }

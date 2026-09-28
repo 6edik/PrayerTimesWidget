@@ -51,22 +51,6 @@ final class IslamicCalendarViewModel: ObservableObject {
         return calendar
     }
 
-    private struct HijriHolidayKey: Hashable {
-        let day: Int
-        let month: Int
-    }
-
-    private let holidayKeys: Set<HijriHolidayKey> = [
-        .init(day: 8, month: 12),   // Hajj
-        .init(day: 9, month: 12),   // Day of Arafah
-        .init(day: 10, month: 12),  // Eid al-Adha
-        .init(day: 1, month: 1),    // Islamic New Year
-        .init(day: 10, month: 1),   // Ashura
-        .init(day: 27, month: 7),   // Isra’ & Mi’raj
-        .init(day: 1, month: 9),    // Ramadan
-        .init(day: 1, month: 10)    // Eid al-Fitr
-    ]
-
     var sectionTitle: String {
         "Besondere Tage"
     }
@@ -86,7 +70,7 @@ final class IslamicCalendarViewModel: ObservableObject {
     func loadYear(for date: Date, force: Bool = false) async {
         let year = calendar.component(.year, from: date)
 
-        if !force, let cached = calendarStore.loadYear(year) {
+        if !force, let cached = IslamicHolidayClassifier.loadYearMigratingIfNeeded(year, store: calendarStore, hijriCalendar: hijriCalendar) {
             specialDays = cached
             errorMessage = nil
             isLoading = false
@@ -98,8 +82,13 @@ final class IslamicCalendarViewModel: ObservableObject {
 
         do {
             let fetched = try await service.fetchSpecialDays(forGregorianYear: year)
-            specialDays = fetched
-            calendarStore.saveYear(year, days: fetched)
+            // Filtered immediately on arrival — `specialDays` (which feeds
+            // the day sheet, the grid's orange highlight and the "X
+            // Ereignisse" summary) must never even transiently hold an
+            // irrelevant AlAdhan entry, not just the persisted copy.
+            let relevant = IslamicHolidayClassifier.filterRelevant(fetched, hijriCalendar: hijriCalendar)
+            specialDays = relevant
+            calendarStore.saveYear(year, days: relevant)
         } catch {
             specialDays = []
             errorMessage = error.localizedDescription
@@ -122,18 +111,44 @@ final class IslamicCalendarViewModel: ObservableObject {
         isHolidayOverviewLoading = false
     }
 
-    func events(for date: Date) -> [IslamicSpecialDay] {
+    /// Every AlAdhan special day attached to `date`, unfiltered — feeds the
+    /// day sheet's event list. Includes entries like "Urs of …" or "Birth
+    /// of …" that are not one of the app's selected major holidays; never
+    /// used to decide the calendar grid's orange highlight (see
+    /// `isHighlightedHoliday(for:)`).
+    func allEventsForDay(_ date: Date) -> [IslamicSpecialDay] {
         specialDays
             .filter { calendar.isDate($0.sortDate, inSameDayAs: date) }
             .sorted { $0.sortDate < $1.sortDate }
     }
 
-    func hasEvents(for date: Date) -> Bool {
-        !events(for: date).isEmpty
+    func hasAnyEventForDay(_ date: Date) -> Bool {
+        !allEventsForDay(date).isEmpty
     }
 
-    func prayerDay(for date: Date) -> PrayerDay? {
-        prayerStore.loadPrayerDay(for: date, settings: settingsProvider())
+    /// True only when at least one of `date`'s AlAdhan special days is one
+    /// of the app's own curated `MajorIslamicHoliday` cases — the exact
+    /// same Umm-al-Qura-based definitions and AlAdhan-reported Hijri
+    /// day/month (`IslamicHolidayClassifier`) the Feiertage-overview and
+    /// the holiday-notification scheduler already use. Deliberately not a
+    /// title search (no "Eid"/"Birth"/"Urs" string matching) and not just
+    /// "does this day have any event at all" — an ordinary AlAdhan entry
+    /// like "Urs of …" must never make this true.
+    func isHighlightedHoliday(for date: Date) -> Bool {
+        allEventsForDay(date).contains { IslamicHolidayClassifier.isMajorHoliday($0, hijriCalendar: hijriCalendar) }
+    }
+
+    /// Builds a fresh, per-day view model for the day sheet's cache-first,
+    /// single-day prayer-times lookup. A new instance per presented day
+    /// (never reused across taps) keeps rapid day switches and sheet
+    /// dismissal race-free: each instance only ever holds/updates state for
+    /// the one `date` it was created with.
+    func makeDaySheetViewModel(for date: Date) -> IslamicDaySheetViewModel {
+        IslamicDaySheetViewModel(
+            date: date,
+            prayerStore: prayerStore,
+            settingsProvider: settingsProvider
+        )
     }
 
     private struct HijriMonthKey: Hashable {
@@ -223,7 +238,8 @@ final class IslamicCalendarViewModel: ObservableObject {
 
         return dates.map { date in
             let prayer = cachedDays[isoFormatter.string(from: date)]
-            let dayEvents = events(for: date)
+            let dayEvents = allEventsForDay(date)
+            let isHighlighted = dayEvents.contains { IslamicHolidayClassifier.isMajorHoliday($0, hijriCalendar: hijriCalendar) }
 
             return IslamicCalendarDayItem(
                 date: date,
@@ -232,7 +248,8 @@ final class IslamicCalendarViewModel: ObservableObject {
                 isSelected: calendar.isDate(date, inSameDayAs: selectedDate),
                 gregorianDayText: String(calendar.component(.day, from: date)),
                 hijriText: hijriDayText(for: date),
-                events: dayEvents,
+                allEventsForDay: dayEvents,
+                isHighlightedHoliday: isHighlighted,
                 prayerDay: prayer
             )
         }
@@ -279,41 +296,13 @@ final class IslamicCalendarViewModel: ObservableObject {
 }
 
 extension IslamicCalendarViewModel {
-    private func hijriHolidayKey(for specialDay: IslamicSpecialDay) -> HijriHolidayKey? {
-        // Prefer the Hijri day/month AlAdhan itself reported for this
-        // holiday. Re-deriving day/month from `sortDate` via a *different*
-        // calendar (Umm-al-Qura) risks disagreeing with AlAdhan by a day for
-        // moon-sighting-dependent dates (Ramadan start/end, Eid al-Adha,
-        // Ashura), which would silently drop the holiday out of every
-        // holidayKeys match even though AlAdhan flagged it correctly.
-        if let month = specialDay.hijriMonthNumber, let day = Int(specialDay.hijriDay) {
-            return HijriHolidayKey(day: day, month: month)
-        }
-
-        // Fallback only for cache entries saved before `hijriMonthNumber`
-        // existed; they don't have AlAdhan's own month number persisted, so
-        // fall back to the previous best-effort re-derivation until the
-        // cache is refreshed.
-        let components = hijriCalendar.dateComponents([.day, .month], from: specialDay.sortDate)
-
-        guard let day = components.day, let month = components.month else {
-            return nil
-        }
-
-        return HijriHolidayKey(day: day, month: month)
-    }
-
     private func isHolidayOverviewItem(_ day: IslamicSpecialDay) -> Bool {
-        guard let key = hijriHolidayKey(for: day) else {
-            return false
-        }
-
-        return holidayKeys.contains(key)
+        IslamicHolidayClassifier.isMajorHoliday(day, hijriCalendar: hijriCalendar)
     }
 
     private func mergedDays(for years: [Int]) -> [IslamicSpecialDay] {
         let merged = years
-            .compactMap { calendarStore.loadYear($0) }
+            .compactMap { IslamicHolidayClassifier.loadYearMigratingIfNeeded($0, store: calendarStore, hijriCalendar: hijriCalendar) }
             .flatMap { $0 }
 
         return deduplicated(days: merged)
@@ -326,20 +315,21 @@ extension IslamicCalendarViewModel {
             .sorted { $0.sortDate < $1.sortDate }
             .filter { item in
                 let gregorianDay = calendar.startOfDay(for: item.sortDate).timeIntervalSince1970
-                let hijriKey = hijriHolidayKey(for: item)
+                let hijriKey = IslamicHolidayClassifier.hijriHolidayKey(for: item, hijriCalendar: hijriCalendar)
                 let key = "\(gregorianDay)-\(hijriKey?.day ?? -1)-\(hijriKey?.month ?? -1)"
                 return seen.insert(key).inserted
             }
     }
 
     private func missingYears(in years: [Int]) -> [Int] {
-        years.filter { calendarStore.loadYear($0) == nil }
+        years.filter { IslamicHolidayClassifier.loadYearMigratingIfNeeded($0, store: calendarStore, hijriCalendar: hijriCalendar) == nil }
     }
 
     private func fetchAndCache(year: Int) async throws -> [IslamicSpecialDay] {
         let fetched = try await service.fetchSpecialDays(forGregorianYear: year)
-        calendarStore.saveYear(year, days: fetched)
-        return fetched
+        let relevant = IslamicHolidayClassifier.filterRelevant(fetched, hijriCalendar: hijriCalendar)
+        calendarStore.saveYear(year, days: relevant)
+        return relevant
     }
 
     private func nextHoliday(after date: Date, in items: [IslamicSpecialDay]) -> IslamicSpecialDay? {
@@ -405,7 +395,7 @@ extension IslamicCalendarViewModel {
                     requestedYears.append(nextYearToLoad)
                 }
 
-                if calendarStore.loadYear(nextYearToLoad) == nil {
+                if IslamicHolidayClassifier.loadYearMigratingIfNeeded(nextYearToLoad, store: calendarStore, hijriCalendar: hijriCalendar) == nil {
                     _ = try await fetchAndCache(year: nextYearToLoad)
                 }
 
@@ -469,27 +459,5 @@ extension IslamicCalendarViewModel {
 
     func holidayHijriText(for holiday: IslamicSpecialDay) -> String {
         "\(holiday.hijriDay). \(holiday.hijriMonth) \(holiday.hijriYear)"
-    }
-}
-
-extension IslamicCalendarViewModel {
-    func yearEvents(for date: Date) -> [IslamicSpecialDay] {
-        let year = calendar.component(.year, from: date)
-
-        if let cached = calendarStore.loadYear(year) {
-            return cached.sorted { $0.sortDate < $1.sortDate }
-        }
-
-        return specialDays
-            .filter { calendar.component(.year, from: $0.sortDate) == year }
-            .sorted { $0.sortDate < $1.sortDate }
-    }
-
-    func yearEventCount(for date: Date) -> Int {
-        yearEvents(for: date).count
-    }
-
-    func yearTitle(for date: Date) -> String {
-        String(calendar.component(.year, from: date))
     }
 }

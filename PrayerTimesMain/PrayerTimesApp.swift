@@ -1,5 +1,6 @@
 import SwiftUI
 import BackgroundTasks
+import UserNotifications
 
 @main
 struct PrayerTimesApp: App {
@@ -11,6 +12,7 @@ struct PrayerTimesApp: App {
         BGTaskScheduler.shared.register(forTaskWithIdentifier: Self.refreshIdentifier, using: nil) { task in
             Self.handleAppRefresh(task: task as! BGAppRefreshTask)
         }
+        UNUserNotificationCenter.current().delegate = PrayerNotificationDelegate.shared
     }
 
     var body: some Scene {
@@ -19,11 +21,20 @@ struct PrayerTimesApp: App {
                 .fontDesign(.serif)
                 .task {
                     Self.scheduleAppRefresh()
+                    await NotificationScheduler().reschedule()
                 }
         }
         .onChange(of: scenePhase) { _, newPhase in
-            if newPhase == .background {
+            switch newPhase {
+            case .background:
                 Self.scheduleAppRefresh()
+            case .active:
+                // "Wenn die App wieder aktiv wird" — reschedule from
+                // whatever is cached right now. Never relies on iOS having
+                // launched the app at a specific time.
+                Task { await NotificationScheduler().reschedule() }
+            default:
+                break
             }
         }
     }
@@ -78,6 +89,13 @@ struct PrayerTimesApp: App {
                     settings: autoSettings,
                     source: .backgroundTask
                 )
+
+                // Reschedule regardless of outcome: on success there's
+                // fresh data to plan from; on failure/skip the existing
+                // cache (if any still matches) is what should be planned
+                // from — either way "wenn sich Gebetszeiten-Daten ändern"
+                // is covered without waiting for the app to be opened.
+                await NotificationScheduler().reschedule()
 
                 semaphore.signal()
             }

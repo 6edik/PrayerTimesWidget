@@ -12,10 +12,18 @@ import Foundation
 /// *display* and calendar-based rules (grid, headers, day sheet, widget,
 /// White Days, holiday filtering) go through here.
 enum HijriDateFormatting {
-    static func calendar() -> Calendar {
+    /// - Parameter timeZone: defaults to the device's own timezone, exactly
+    ///   as every existing call site relies on. Pass a specific location's
+    ///   timezone (e.g. a cached prayer day's `PrayerTimes.timezone`)
+    ///   instead when a day-boundary decision must follow *that* place's
+    ///   calendar day rather than the device's — e.g. the voluntary-fasting
+    ///   White-Days check, which must not misclassify a day right around
+    ///   local midnight just because the device happens to sit in a
+    ///   different timezone than the configured prayer location.
+    static func calendar(timeZone: TimeZone = .autoupdatingCurrent) -> Calendar {
         var calendar = Calendar(identifier: .islamicUmmAlQura)
         calendar.locale = .autoupdatingCurrent
-        calendar.timeZone = .autoupdatingCurrent
+        calendar.timeZone = timeZone
         return calendar
     }
 

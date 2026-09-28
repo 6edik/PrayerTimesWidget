@@ -34,12 +34,16 @@ struct PrayerTimesHomeView: View {
         case settings
         case statistics
         case manualQuery
+        case notifications
+        case savedPrayerTimes
 
         var id: Int {
             switch self {
             case .settings: return 1
             case .statistics: return 2
             case .manualQuery: return 3
+            case .notifications: return 4
+            case .savedPrayerTimes: return 5
             }
         }
     }
@@ -135,12 +139,20 @@ struct PrayerTimesHomeView: View {
             }
             .toolbar {
                 ToolbarItemGroup(placement: .topBarTrailing) {
+                    TopBarActionButton(systemImage: "tray.full", accessibilityLabel: "Gespeicherte Gebetszeiten") {
+                        activeSheet = .savedPrayerTimes
+                    }
+
                     TopBarActionButton(systemImage: "chart.bar", accessibilityLabel: "Statistiken") {
                         activeSheet = .statistics
                     }
-                    
+
                     TopBarActionButton(systemImage: "magnifyingglass", accessibilityLabel: "Manuelle Suche") {
                         activeSheet = .manualQuery
+                    }
+
+                    TopBarActionButton(systemImage: "bell", accessibilityLabel: "Benachrichtigungen") {
+                        activeSheet = .notifications
                     }
 
                     TopBarActionButton(systemImage: "gearshape", accessibilityLabel: "Einstellungen") {
@@ -160,6 +172,10 @@ struct PrayerTimesHomeView: View {
                     StatisticsView()
                 case .manualQuery:
                     ManualQueryView()
+                case .notifications:
+                    NotificationSettingsView()
+                case .savedPrayerTimes:
+                    CachedPrayerTimesView()
                 }
             }
         }
@@ -214,6 +230,7 @@ struct PrayerTimesHomeView: View {
         case .success:
             applyCachedTimes(autoSettings: autoSettings)
             errorMessage = nil
+            await NotificationScheduler().reschedule()
         case .failure(let message):
             applyCachedTimes(autoSettings: autoSettings)
             errorMessage = message

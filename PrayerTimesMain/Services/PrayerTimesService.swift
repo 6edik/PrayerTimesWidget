@@ -26,7 +26,16 @@ enum PrayerTimesServiceError: LocalizedError {
     }
 }
 
-struct PrayerTimesService {
+/// Narrow seam around the single-day AlAdhan lookup so callers that need a
+/// temporary, non-persisted fetch for one specific day (e.g. the Islamic
+/// calendar's day sheet) can depend on this instead of the concrete
+/// `PrayerTimesService`, and tests can substitute a fake implementation
+/// instead of making a real network call.
+protocol SingleDayPrayerTimesFetching: Sendable {
+    nonisolated func fetchPrayerTimesForSingleDayUncached(settings: PrayerSettings) async throws -> PrayerTimes
+}
+
+struct PrayerTimesService: SingleDayPrayerTimesFetching {
     // Requested coordinate vs. the coordinate AlAdhan's response metadata
     // actually reports back must agree closely — we send an exact
     // coordinate now (not an address for AlAdhan to geocode itself), so any

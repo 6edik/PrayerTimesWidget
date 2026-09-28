@@ -2,19 +2,29 @@ import SwiftUI
 
 struct IslamicDayEventsSheet: View {
     let day: IslamicDaySheetData
+    @StateObject private var dayViewModel: IslamicDaySheetViewModel
+
+    init(day: IslamicDaySheetData, dayViewModel: @autoclosure @escaping () -> IslamicDaySheetViewModel) {
+        self.day = day
+        _dayViewModel = StateObject(wrappedValue: dayViewModel())
+    }
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
                 headerSection
-
-                if let prayerDay = day.prayerDay {
-                    prayerTimesSection(prayerDay)
-                }
-
+                prayerTimesSection
                 eventsSection
             }
             .padding()
+        }
+        .task {
+            dayViewModel.load()
+        }
+        .onDisappear {
+            // Discards a still-in-flight single-day request (if any) so a
+            // late result can never land back into this closed sheet.
+            dayViewModel.cancel()
         }
     }
 
@@ -23,32 +33,83 @@ struct IslamicDayEventsSheet: View {
             Text(formattedGregorian(day.date))
                 .font(.headline)
 
-            if let prayerDay = day.prayerDay {
-                Text(prayerDay.hijri?.displayText ?? "Kein Hijri-Datum geladen")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-            }
+            Text(day.hijriText)
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
         }
     }
 
-    private func prayerTimesSection(_ prayerDay: PrayerDay) -> some View {
+    @ViewBuilder
+    private var prayerTimesSection: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("Gebetszeiten")
-                .font(.headline)
+            HStack {
+                Text("Gebetszeiten")
+                    .font(.headline)
+                Spacer()
+                sourceBadge
+            }
 
-            VStack(spacing: 8) {
-                prayerRow("Fajr", prayerDay.times.fajr)
-                prayerRow("Shuruq", prayerDay.times.shuruk)
-                prayerRow("Dhuhr", prayerDay.times.dhuhr)
-                prayerRow("Asr", prayerDay.times.asr)
-                prayerRow("Maghrib", prayerDay.times.maghrib)
-                prayerRow("Isha", prayerDay.times.isha)
+            switch dayViewModel.state {
+            case .idle, .loading:
+                HStack(spacing: 8) {
+                    ProgressView()
+                    Text("Lade Gebetszeiten …")
+                        .foregroundStyle(.secondary)
+                }
+
+            case .loaded(let raw, let adjusted, _):
+                VStack(spacing: 8) {
+                    prayerRow("Fajr", adjusted.fajr)
+                    prayerRow("Shuruq", adjusted.shuruk)
+                    prayerRow("Dhuhr", adjusted.dhuhr)
+                    prayerRow("Asr", adjusted.asr)
+                    prayerRow("Maghrib", adjusted.maghrib)
+                    prayerRow("Isha", adjusted.isha)
+                }
+
+                if adjusted != raw {
+                    Label("Persönliche Justierung angewendet", systemImage: "slider.horizontal.3")
+                        .font(.caption)
+                        .foregroundStyle(.orange)
+                }
+
+            case .offline:
+                Label(
+                    "Keine Internetverbindung. Für diesen Tag ist kein passender Cache-Eintrag vorhanden.",
+                    systemImage: "wifi.slash"
+                )
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+
+            case .failed(let message):
+                Label(message, systemImage: "exclamationmark.triangle")
+                    .font(.subheadline)
+                    .foregroundStyle(.red)
             }
         }
         .padding()
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(.thinMaterial)
         .clipShape(RoundedRectangle(cornerRadius: 12))
+    }
+
+    /// Marks, next to the "Gebetszeiten" heading, whether the shown times
+    /// came from the existing Auto-Cache or from a temporary single-day
+    /// fetch — never persisted, so it's worth being explicit about it.
+    @ViewBuilder
+    private var sourceBadge: some View {
+        if case .loaded(_, _, let source) = dayViewModel.state {
+            switch source {
+            case .cached:
+                Label("Aus Cache", systemImage: "internaldrive")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            case .fetched:
+                Label("Einzelabfrage", systemImage: "antenna.radiowaves.left.and.right")
+                    .font(.caption2)
+                    .foregroundStyle(.orange)
+            }
+        }
     }
 
     private var eventsSection: some View {
