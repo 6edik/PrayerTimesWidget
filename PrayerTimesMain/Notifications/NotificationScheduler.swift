@@ -39,12 +39,14 @@ struct NotificationScheduler {
     static let prayerIdentifierPrefix = "com.mertgedik.prayertimes.notif.prayer."
     static let holidayIdentifierPrefix = "com.mertgedik.prayertimes.notif.holiday."
     static let fastingIdentifierPrefix = "com.mertgedik.prayertimes.notif.fasting."
+    static let zakatIdentifierPrefix = "com.mertgedik.prayertimes.notif.zakat."
 
     private let timesStore: SharedPrayerTimesStore
     private let settingsStore: SharedPrayerSettingsStore
     private let notificationSettingsStore: NotificationSettingsStore
     private let calendarStore: SharedIslamicCalendarStore
     private let calendarService: IslamicCalendarService
+    private let personalCalendarStore: PersonalCalendarStore
     private let center: UNUserNotificationCenter
     private let hijriCalendar: Calendar
     private let deviceCalendar: Calendar
@@ -55,6 +57,7 @@ struct NotificationScheduler {
         notificationSettingsStore: NotificationSettingsStore = NotificationSettingsStore(),
         calendarStore: SharedIslamicCalendarStore = SharedIslamicCalendarStore(),
         calendarService: IslamicCalendarService = IslamicCalendarService(),
+        personalCalendarStore: PersonalCalendarStore = PersonalCalendarStore(),
         center: UNUserNotificationCenter = .current()
     ) {
         self.timesStore = timesStore
@@ -62,6 +65,7 @@ struct NotificationScheduler {
         self.notificationSettingsStore = notificationSettingsStore
         self.calendarStore = calendarStore
         self.calendarService = calendarService
+        self.personalCalendarStore = personalCalendarStore
         self.center = center
 
         var hijri = Calendar(identifier: .islamicUmmAlQura)
@@ -89,6 +93,7 @@ struct NotificationScheduler {
             notificationSettings.hasAnyPrayerEnabled
                 || notificationSettings.hasAnyHolidayEnabled
                 || notificationSettings.hasAnyVoluntaryFastingEnabled
+                || notificationSettings.hasAnyZakatEnabled
         else {
             return
         }
@@ -111,6 +116,10 @@ struct NotificationScheduler {
 
         if notificationSettings.hasAnyVoluntaryFastingEnabled {
             candidates += fastingCandidates(settings: notificationSettings)
+        }
+
+        if notificationSettings.hasAnyZakatEnabled {
+            candidates += zakatCandidates(settings: notificationSettings, now: now)
         }
 
         let budget = await remainingBudget()
@@ -260,11 +269,12 @@ struct NotificationScheduler {
         return result
     }
 
-    private func isoKey(_ date: Date) -> String {
+    private func isoKey(_ date: Date, calendar: Calendar? = nil) -> String {
+        let cal = calendar ?? deviceCalendar
         let formatter = DateFormatter()
-        formatter.calendar = deviceCalendar
+        formatter.calendar = cal
         formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.timeZone = deviceCalendar.timeZone
+        formatter.timeZone = cal.timeZone
         formatter.dateFormat = "yyyy-MM-dd"
         return formatter.string(from: date)
     }
@@ -407,6 +417,89 @@ struct NotificationScheduler {
         return formatter.string(from: previous)
     }
 
+    // MARK: - Zakat candidates
+
+    /// Reminders for the user's own Zakat-due-date entries
+    /// (`PersonalCalendarEntry` with `kind == .zakatDueDate`). Never
+    /// computes or checks whether Zakat is actually owed — purely a
+    /// personal reminder for a Hijri day/month the user chose themselves.
+    /// The note text itself is never included in the notification body
+    /// (spec item 10): the body is always the same neutral sentence.
+    ///
+    /// Every Zakat entry recurs every Hijri year — there is no one-time
+    /// variant. `ZakatOccurrenceCalculator.upcomingOccurrences` expands
+    /// the entry's fixed (day, month) rule into several upcoming concrete
+    /// dates (already bounded and gap-safe — see that type). Each
+    /// candidate's identifier is keyed by the entry's stable `id` plus
+    /// that specific occurrence's ISO date, so editing an entry's rule and
+    /// calling `reschedule()` again (which always removes every
+    /// previously-owned request first) can never leave a stale or
+    /// duplicate Zakat reminder behind.
+    ///
+    /// Uses the *configured prayer location's* own timezone — not the
+    /// device's — for both the day boundary and the reminder's clock time,
+    /// taken from whatever prayer data is already cached for the current
+    /// location (same source `fastingCandidates` uses); falls back to the
+    /// device's timezone only if nothing is cached yet, rather than
+    /// inventing one.
+    func zakatCandidates(settings: NotificationSettings, now: Date = Date()) -> [NotificationCandidate] {
+        let zakatSettings = settings.zakat
+        guard zakatSettings.isEnabled else { return [] }
+
+        let zakatEntries = personalCalendarStore.loadAll().filter { $0.kind == .zakatDueDate }
+        guard !zakatEntries.isEmpty else { return [] }
+
+        let autoSettings = settingsStore.loadAutoSettings()
+        let cachedDays = timesStore.loadAllDays(settings: autoSettings)
+        let locationTimeZone = cachedDays.values.first.flatMap { TimeZone(identifier: $0.times.timezone) } ?? .current
+
+        var locationCalendar = Calendar(identifier: .gregorian)
+        locationCalendar.timeZone = locationTimeZone
+        let locationHijriCalendar = HijriDateFormatting.calendar(timeZone: locationTimeZone)
+
+        var result: [NotificationCandidate] = []
+
+        for entry in zakatEntries {
+            guard let day = entry.hijriDay, let month = entry.hijriMonth else { continue }
+
+            let occurrences = ZakatOccurrenceCalculator.upcomingOccurrences(
+                hijriDay: day,
+                hijriMonth: month,
+                now: now,
+                hijriCalendar: locationHijriCalendar
+            )
+
+            for occurrence in occurrences {
+                let dayStart = locationCalendar.startOfDay(for: occurrence)
+                let occurrenceKey = isoKey(dayStart, calendar: locationCalendar)
+
+                if let fireDate = locationCalendar.date(bySettingHour: zakatSettings.hour, minute: zakatSettings.minute, second: 0, of: dayStart) {
+                    result.append(NotificationCandidate(
+                        identifier: "\(Self.zakatIdentifierPrefix)\(entry.id.uuidString).\(occurrenceKey).onday",
+                        fireDate: fireDate,
+                        title: "Zakat-Stichtag",
+                        body: "Dein eingetragener Zakat-Stichtag ist heute. Prüfe deine Zakat-Berechnung.",
+                        sound: .standard
+                    ))
+                }
+
+                if zakatSettings.notifyDayBefore,
+                   let dayBefore = locationCalendar.date(byAdding: .day, value: -1, to: dayStart),
+                   let fireDate = locationCalendar.date(bySettingHour: zakatSettings.hour, minute: zakatSettings.minute, second: 0, of: dayBefore) {
+                    result.append(NotificationCandidate(
+                        identifier: "\(Self.zakatIdentifierPrefix)\(entry.id.uuidString).\(occurrenceKey).before",
+                        fireDate: fireDate,
+                        title: "Zakat-Stichtag",
+                        body: "Morgen ist dein eingetragener Zakat-Stichtag. Prüfe deine Zakat-Berechnung.",
+                        sound: .standard
+                    ))
+                }
+            }
+        }
+
+        return result
+    }
+
     // MARK: - UNUserNotificationCenter plumbing
 
     private func remainingBudget() async -> Int {
@@ -426,6 +519,7 @@ struct NotificationScheduler {
         identifier.hasPrefix(Self.prayerIdentifierPrefix)
             || identifier.hasPrefix(Self.holidayIdentifierPrefix)
             || identifier.hasPrefix(Self.fastingIdentifierPrefix)
+            || identifier.hasPrefix(Self.zakatIdentifierPrefix)
     }
 
     private func schedule(_ candidate: NotificationCandidate) async {

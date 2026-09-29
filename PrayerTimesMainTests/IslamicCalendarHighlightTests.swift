@@ -33,6 +33,7 @@ struct IslamicCalendarHighlightTests {
             service: IslamicCalendarService(),
             prayerStore: SharedPrayerTimesStore(suiteName: prayerSuite),
             calendarStore: SharedIslamicCalendarStore(suiteName: calendarSuite),
+            personalCalendarViewModel: PersonalCalendarViewModel(store: PersonalCalendarStore(suiteName: prayerSuite)),
             settingsProvider: { AutoPrayerSettings() }
         )
     }
@@ -352,6 +353,70 @@ struct IslamicCalendarHighlightTests {
 
         #expect(item.allEventsForDay.map(\.title) == ["Eid al-Fitr"])
         #expect(item.isHighlightedHoliday == true)
+    }
+
+    // MARK: - Personal calendar entries combine with holiday/fasting highlights
+
+    /// A personal entry on the same day as a curated holiday must not
+    /// suppress (or be suppressed by) the orange highlight — both facts
+    /// stay independently visible, exactly like the existing
+    /// holiday+fasting combined-state guarantee above.
+    @Test func personalEntryOnACuratedHolidayKeepsBothFlagsTrue() async throws {
+        let suite1 = makeSuiteName(); let suite2 = makeSuiteName()
+        defer { cleanup([suite1, suite2]) }
+        let calendarStore = SharedIslamicCalendarStore(suiteName: suite1)
+        let personalStore = PersonalCalendarStore(suiteName: suite2)
+        let personalViewModel = PersonalCalendarViewModel(store: personalStore)
+        let viewModel = IslamicCalendarViewModel(
+            service: IslamicCalendarService(),
+            prayerStore: SharedPrayerTimesStore(suiteName: suite2),
+            calendarStore: calendarStore,
+            personalCalendarViewModel: personalViewModel,
+            settingsProvider: { AutoPrayerSettings() }
+        )
+
+        let date = Date()
+        let eidAlFitr = makeSpecialDay(title: "Eid al-Fitr", hijriDay: "1", hijriMonthNumber: 10, sortDate: date)
+        await loadDays([eidAlFitr], into: viewModel, calendarStore: calendarStore, referenceDate: date)
+
+        personalViewModel.save(PersonalCalendarEntry(note: "Familienbesuch", isoDate: PersonalCalendarViewModel.isoDateString(from: date)))
+
+        let gridDays = viewModel.monthGridDays(for: date, selectedDate: date)
+        let item = try #require(gridDays.first { deviceCalendar.isDate($0.date, inSameDayAs: date) })
+
+        #expect(item.isHighlightedHoliday == true)
+        #expect(item.hasPersonalEntries == true)
+    }
+
+    /// A personal entry on a Sunnah-fasting day (Monday/Thursday/White
+    /// Day) must not interfere with `VoluntaryFastingClassifier`'s
+    /// classification — the two systems are fully independent (fasting
+    /// depends only on the date, `hasPersonalEntries` only on the
+    /// personal-entries store), so both can be true for the same day.
+    @Test func personalEntryOnASunnahFastingDayDoesNotAffectFastingClassification() async throws {
+        let suite1 = makeSuiteName(); let suite2 = makeSuiteName()
+        defer { cleanup([suite1, suite2]) }
+        let calendarStore = SharedIslamicCalendarStore(suiteName: suite1)
+        let personalStore = PersonalCalendarStore(suiteName: suite2)
+        let personalViewModel = PersonalCalendarViewModel(store: personalStore)
+        let viewModel = IslamicCalendarViewModel(
+            service: IslamicCalendarService(),
+            prayerStore: SharedPrayerTimesStore(suiteName: suite2),
+            calendarStore: calendarStore,
+            personalCalendarViewModel: personalViewModel,
+            settingsProvider: { AutoPrayerSettings() }
+        )
+
+        let monday = firstJan1ThatIsAWeekday(2, searchingFrom: 2020)
+        personalViewModel.save(PersonalCalendarEntry(note: "Sport", isoDate: PersonalCalendarViewModel.isoDateString(from: monday)))
+
+        let occasions = VoluntaryFastingClassifier.occasions(for: monday, gregorianCalendar: deviceCalendar, hijriCalendar: hijriCalendar)
+        #expect(occasions.contains(.monday))
+
+        let gridDays = viewModel.monthGridDays(for: monday, selectedDate: monday)
+        let item = try #require(gridDays.first { deviceCalendar.isDate($0.date, inSameDayAs: monday) })
+        #expect(item.hasPersonalEntries == true)
+        #expect(item.isHighlightedHoliday == false)
     }
 
     // MARK: - Helper

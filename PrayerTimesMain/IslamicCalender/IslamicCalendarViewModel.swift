@@ -14,25 +14,35 @@ final class IslamicCalendarViewModel: ObservableObject {
     private let service: IslamicCalendarService
     private let prayerStore: SharedPrayerTimesStore
     private let calendarStore: SharedIslamicCalendarStore
+    /// Shared with `IslamicCalendarView` (same instance, injected) so a
+    /// personal entry created/edited/deleted anywhere invalidates this
+    /// view model's owner and the grid recomputes immediately.
+    let personalCalendarViewModel: PersonalCalendarViewModel
     private let settingsProvider: () -> AutoPrayerSettings
 
     init(
         service: IslamicCalendarService,
         prayerStore: SharedPrayerTimesStore,
         calendarStore: SharedIslamicCalendarStore,
+        personalCalendarViewModel: PersonalCalendarViewModel,
         settingsProvider: @escaping () -> AutoPrayerSettings
     ) {
         self.service = service
         self.prayerStore = prayerStore
         self.calendarStore = calendarStore
+        self.personalCalendarViewModel = personalCalendarViewModel
         self.settingsProvider = settingsProvider
     }
 
-    convenience init(settingsProvider: @escaping () -> AutoPrayerSettings) {
+    convenience init(
+        personalCalendarViewModel: PersonalCalendarViewModel,
+        settingsProvider: @escaping () -> AutoPrayerSettings
+    ) {
         self.init(
             service: IslamicCalendarService(),
             prayerStore: SharedPrayerTimesStore(),
             calendarStore: SharedIslamicCalendarStore(),
+            personalCalendarViewModel: personalCalendarViewModel,
             settingsProvider: settingsProvider
         )
     }
@@ -250,6 +260,7 @@ final class IslamicCalendarViewModel: ObservableObject {
                 hijriText: hijriDayText(for: date),
                 allEventsForDay: dayEvents,
                 isHighlightedHoliday: isHighlighted,
+                hasPersonalEntries: personalCalendarViewModel.hasEntries(for: date),
                 prayerDay: prayer
             )
         }

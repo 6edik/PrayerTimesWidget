@@ -22,6 +22,13 @@ struct IslamicCalendarDayItem: Identifiable {
     /// thing that should ever drive the cell's orange date-number color.
     let isHighlightedHoliday: Bool
 
+    /// True when the user has at least one personal calendar entry on this
+    /// day. Deliberately independent of `isHighlightedHoliday` (orange) and
+    /// the Sunnah-fasting highlight (blue, computed in the cell itself) —
+    /// drives only the small indicator dot, never the date-number color, so
+    /// all three states can be shown at once.
+    let hasPersonalEntries: Bool
+
     let prayerDay: PrayerDay?
 
     var id: String {

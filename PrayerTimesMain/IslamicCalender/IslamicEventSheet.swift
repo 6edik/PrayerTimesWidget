@@ -3,10 +3,24 @@ import SwiftUI
 struct IslamicDayEventsSheet: View {
     let day: IslamicDaySheetData
     @StateObject private var dayViewModel: IslamicDaySheetViewModel
+    @ObservedObject var personalCalendarViewModel: PersonalCalendarViewModel
 
-    init(day: IslamicDaySheetData, dayViewModel: @autoclosure @escaping () -> IslamicDaySheetViewModel) {
+    @State private var showAddEntrySheet = false
+    @State private var entryToEdit: PersonalCalendarEntry?
+    @State private var entryPendingDeletion: PersonalCalendarEntry?
+
+    init(
+        day: IslamicDaySheetData,
+        dayViewModel: @autoclosure @escaping () -> IslamicDaySheetViewModel,
+        personalCalendarViewModel: PersonalCalendarViewModel
+    ) {
         self.day = day
         _dayViewModel = StateObject(wrappedValue: dayViewModel())
+        self.personalCalendarViewModel = personalCalendarViewModel
+    }
+
+    private var personalEntries: [PersonalCalendarEntry] {
+        personalCalendarViewModel.entries(for: day.date)
     }
 
     var body: some View {
@@ -15,6 +29,7 @@ struct IslamicDayEventsSheet: View {
                 headerSection
                 prayerTimesSection
                 eventsSection
+                personalEntriesSection
             }
             .padding()
         }
@@ -26,6 +41,80 @@ struct IslamicDayEventsSheet: View {
             // Discards a still-in-flight single-day request (if any) so a
             // late result can never land back into this closed sheet.
             dayViewModel.cancel()
+        }
+        .sheet(isPresented: $showAddEntrySheet) {
+            PersonalCalendarEntryFormView(viewModel: personalCalendarViewModel, mode: .create(date: day.date))
+        }
+        .sheet(item: $entryToEdit) { entry in
+            PersonalCalendarEntryFormView(viewModel: personalCalendarViewModel, mode: .edit(entry))
+        }
+        .alert(
+            "Notiz löschen?",
+            isPresented: Binding(
+                get: { entryPendingDeletion != nil },
+                set: { isPresented in
+                    if !isPresented { entryPendingDeletion = nil }
+                }
+            ),
+            presenting: entryPendingDeletion
+        ) { entry in
+            Button("Löschen", role: .destructive) {
+                personalCalendarViewModel.delete(entry)
+                entryPendingDeletion = nil
+            }
+            Button("Abbrechen", role: .cancel) {
+                entryPendingDeletion = nil
+            }
+        } message: { _ in
+            Text("Diese Notiz wird dauerhaft gelöscht.")
+        }
+    }
+
+    private var personalEntriesSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Meine Notizen")
+                .font(.headline)
+
+            if personalEntries.isEmpty {
+                Text("Keine Notizen an diesem Tag")
+                    .foregroundStyle(.secondary)
+            } else {
+                // Not inside a `List`, so `.swipeActions` has no effect here
+                // — an explicit, always-visible delete button next to each
+                // row instead, sized well above the 44pt touch-target
+                // minimum.
+                ForEach(personalEntries) { entry in
+                    HStack(spacing: 8) {
+                        Button {
+                            entryToEdit = entry
+                        } label: {
+                            PersonalCalendarEntryRow(entry: entry, showsDate: false)
+                        }
+                        .buttonStyle(.plain)
+
+                        Button {
+                            entryPendingDeletion = entry
+                        } label: {
+                            Image(systemName: "trash")
+                                .font(.system(size: 16, weight: .semibold))
+                                .foregroundStyle(.red)
+                                .frame(width: 44, height: 44)
+                        }
+                        .accessibilityLabel("Notiz löschen")
+                    }
+                }
+            }
+
+            Button {
+                showAddEntrySheet = true
+            } label: {
+                Label("Notiz hinzufügen", systemImage: "plus.circle.fill")
+                    .font(.subheadline.weight(.semibold))
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 10)
+            }
+            .buttonStyle(.borderedProminent)
+            .accessibilityLabel("Notiz für diesen Tag hinzufügen")
         }
     }
 
@@ -210,10 +299,18 @@ private func previewDayViewModel() -> IslamicDaySheetViewModel {
 }
 
 #Preview("Light") {
-    IslamicDayEventsSheet(day: previewDay(), dayViewModel: previewDayViewModel())
+    IslamicDayEventsSheet(
+        day: previewDay(),
+        dayViewModel: previewDayViewModel(),
+        personalCalendarViewModel: PersonalCalendarViewModel()
+    )
 }
 
 #Preview("Dark") {
-    IslamicDayEventsSheet(day: previewDay(), dayViewModel: previewDayViewModel())
-        .preferredColorScheme(.dark)
+    IslamicDayEventsSheet(
+        day: previewDay(),
+        dayViewModel: previewDayViewModel(),
+        personalCalendarViewModel: PersonalCalendarViewModel()
+    )
+    .preferredColorScheme(.dark)
 }

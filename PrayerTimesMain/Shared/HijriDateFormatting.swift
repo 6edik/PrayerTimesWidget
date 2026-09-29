@@ -11,7 +11,7 @@ import Foundation
 /// The prayer-calculation method itself stays independent of this; only
 /// *display* and calendar-based rules (grid, headers, day sheet, widget,
 /// White Days, holiday filtering) go through here.
-enum HijriDateFormatting {
+nonisolated enum HijriDateFormatting {
     /// - Parameter timeZone: defaults to the device's own timezone, exactly
     ///   as every existing call site relies on. Pass a specific location's
     ///   timezone (e.g. a cached prayer day's `PrayerTimes.timezone`)
@@ -20,7 +20,7 @@ enum HijriDateFormatting {
     ///   White-Days check, which must not misclassify a day right around
     ///   local midnight just because the device happens to sit in a
     ///   different timezone than the configured prayer location.
-    static func calendar(timeZone: TimeZone = .autoupdatingCurrent) -> Calendar {
+    nonisolated static func calendar(timeZone: TimeZone = .autoupdatingCurrent) -> Calendar {
         var calendar = Calendar(identifier: .islamicUmmAlQura)
         calendar.locale = .autoupdatingCurrent
         calendar.timeZone = timeZone
@@ -28,7 +28,7 @@ enum HijriDateFormatting {
     }
 
     /// Long localized text, e.g. "5. Ramadan 1447".
-    static func displayText(for date: Date) -> String {
+    nonisolated static func displayText(for date: Date) -> String {
         let formatter = DateFormatter()
         formatter.calendar = calendar()
         formatter.locale = .autoupdatingCurrent
@@ -38,14 +38,34 @@ enum HijriDateFormatting {
 
     /// Just the Hijri day-of-month, e.g. "5" — matches what the calendar
     /// grid cell shows for the same Gregorian date.
-    static func dayText(for date: Date) -> String {
+    nonisolated static func dayText(for date: Date) -> String {
         String(calendar().component(.day, from: date))
     }
 
     /// Day and month number (for compact widget headers that abbreviate the
     /// month name themselves).
-    static func dayAndMonth(for date: Date) -> (day: Int, month: Int) {
+    nonisolated static func dayAndMonth(for date: Date) -> (day: Int, month: Int) {
         let components = calendar().dateComponents([.day, .month], from: date)
         return (components.day ?? 0, components.month ?? 0)
+    }
+
+    /// Standalone Hijri month name (e.g. "Ramadan") for a month number
+    /// (1...12), independent of any specific year — for contexts where
+    /// only the month/day *rule* matters (e.g. a Zakat entry's recurring
+    /// Hijri day/month, see `PersonalCalendarEntry`), not one specific
+    /// calendar occurrence.
+    nonisolated static func monthName(_ month: Int) -> String {
+        var comps = DateComponents()
+        comps.year = calendar().component(.year, from: Date())
+        comps.month = month
+        comps.day = 1
+
+        guard let date = calendar().date(from: comps) else { return "\(month)." }
+
+        let formatter = DateFormatter()
+        formatter.calendar = calendar()
+        formatter.locale = .autoupdatingCurrent
+        formatter.setLocalizedDateFormatFromTemplate("LLLL")
+        return formatter.string(from: date)
     }
 }

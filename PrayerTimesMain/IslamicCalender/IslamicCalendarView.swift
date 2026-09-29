@@ -3,15 +3,29 @@ import SwiftUI
 @MainActor
 struct IslamicCalendarView: View {
     @StateObject private var viewModel: IslamicCalendarViewModel
+    // Owned here and injected into `viewModel` (same instance) so a
+    // personal note created/edited/deleted anywhere — the day sheet, the
+    // "Meine Notizen" overview, or the add/edit form — invalidates this
+    // view immediately, without any explicit refresh call: SwiftUI
+    // re-renders whenever this `@StateObject`'s `objectWillChange` fires,
+    // which recomputes `monthGridDays` (and thus the grid's indicator dots)
+    // on the next body evaluation.
+    @StateObject private var personalCalendarViewModel: PersonalCalendarViewModel
     @State private var selectedDate = Date()
     @State private var selectedDaySheet: IslamicDaySheetData?
     @State private var displayedMonth = Date()
     @State private var showInfoSheet = false
     @State private var showHolidayOverview = false
+    @State private var showPersonalEntriesOverview = false
 
     init(settingsProvider: @escaping () -> AutoPrayerSettings) {
+        let personalCalendarViewModel = PersonalCalendarViewModel()
+        _personalCalendarViewModel = StateObject(wrappedValue: personalCalendarViewModel)
         _viewModel = StateObject(
-            wrappedValue: IslamicCalendarViewModel(settingsProvider: settingsProvider)
+            wrappedValue: IslamicCalendarViewModel(
+                personalCalendarViewModel: personalCalendarViewModel,
+                settingsProvider: settingsProvider
+            )
         )
     }
 
@@ -72,6 +86,10 @@ struct IslamicCalendarView: View {
             }
             .toolbar {
                 ToolbarItemGroup(placement: .topBarTrailing) {
+                    TopBarActionButton(systemImage: "list.bullet.clipboard", accessibilityLabel: "Meine Notizen") {
+                        showPersonalEntriesOverview = true
+                    }
+
                     TopBarActionButton(systemImage: "sparkles.rectangle.stack", accessibilityLabel: "Feiertage") {
                         showHolidayOverview = true
                     }
@@ -119,11 +137,17 @@ struct IslamicCalendarView: View {
             .sheet(item: $selectedDaySheet) { day in
                 IslamicDayEventsSheet(
                     day: day,
-                    dayViewModel: viewModel.makeDaySheetViewModel(for: day.date)
+                    dayViewModel: viewModel.makeDaySheetViewModel(for: day.date),
+                    personalCalendarViewModel: personalCalendarViewModel
                 )
                 .id(day.id)
                 .presentationDetents([.medium, .large])
                 .presentationDragIndicator(.visible)
+            }
+            .sheet(isPresented: $showPersonalEntriesOverview) {
+                PersonalCalendarOverviewView(viewModel: personalCalendarViewModel)
+                    .presentationDetents([.medium, .large])
+                    .presentationDragIndicator(.visible)
             }
             .task(id: displayedYear) {
                 await viewModel.loadYear(for: displayedMonth)
@@ -189,6 +213,7 @@ struct IslamicCalendarView: View {
                             IslamicCalendarDayCell(item: item)
                         }
                         .buttonStyle(.plain)
+                        .accessibilityHint(item.hasPersonalEntries ? "Enthält persönliche Notizen" : "")
                     }
                 }
             }

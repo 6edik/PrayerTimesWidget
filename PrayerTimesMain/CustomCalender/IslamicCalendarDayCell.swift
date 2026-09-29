@@ -28,6 +28,9 @@ struct IslamicCalendarDayCell: View {
             .padding(.vertical, 4)
             .background(todayBackground)
 
+            personalEntryIndicator
+                .padding(.top, 2)
+
             Spacer(minLength: 0)
         }
         .frame(maxWidth: .infinity)
@@ -93,6 +96,17 @@ struct IslamicCalendarDayCell: View {
                 .stroke(Color.blue.opacity(0.85), lineWidth: 1.5)
                 .frame(width: 26, height: 26)
         }
+    }
+
+    // Deliberately not orange (selected/curated-holiday highlight) and not
+    // blue (Sunnah-fasting highlight) — a purple dot underneath the date
+    // number so all three states stay independently visible when they
+    // coincide on the same day. Always rendered (transparent when absent)
+    // to keep every cell's date number at the same vertical position.
+    private var personalEntryIndicator: some View {
+        Circle()
+            .fill(item.hasPersonalEntries ? Color.purple : Color.clear)
+            .frame(width: 5, height: 5)
     }
 
     @ViewBuilder

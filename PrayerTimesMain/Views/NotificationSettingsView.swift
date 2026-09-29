@@ -66,6 +66,20 @@ struct NotificationSettingsView: View {
                     }
                 }
 
+                Section("Zakat") {
+                    NavigationLink {
+                        ZakatNotificationDetailView(setting: bindingForZakat())
+                    } label: {
+                        HStack {
+                            Text("An Zakat-Stichtage erinnern")
+                            Spacer()
+                            Text(summaryText(for: settings.zakat))
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                }
+
                 Section("Hinweis") {
                     Text("Benachrichtigungen umgehen keinen Stummmodus und keinen Fokus – sie folgen den iOS-Systemeinstellungen wie jede andere App.")
                         .font(.footnote)
@@ -154,6 +168,21 @@ struct NotificationSettingsView: View {
         )
     }
 
+    private func bindingForZakat() -> Binding<ZakatNotificationSetting> {
+        Binding(
+            get: { settings.zakat },
+            set: { newValue in
+                let wasEnabled = settings.zakat.isEnabled
+                settings.zakat = newValue
+                persistAndReschedule()
+
+                if newValue.isEnabled, !wasEnabled {
+                    Task { await requestPermissionIfNeeded() }
+                }
+            }
+        )
+    }
+
     // Only reaches the system prompt once, on the transition to enabled —
     // never automatically on appear.
     private func requestPermissionIfNeeded() async {
@@ -193,6 +222,11 @@ struct NotificationSettingsView: View {
         if setting.notifyDayBefore { parts.append("Vortag") }
         if setting.notifyOnDay { parts.append("Am Tag") }
         return parts.joined(separator: " & ")
+    }
+
+    private func summaryText(for setting: ZakatNotificationSetting) -> String {
+        guard setting.isEnabled else { return "Aus" }
+        return setting.notifyDayBefore ? "An · Vortag & am Tag" : "An · Am Tag"
     }
 }
 
@@ -329,6 +363,57 @@ private struct HolidayNotificationDetailView: View {
         .scrollContentBackground(.hidden)
         .background(Color("AppBackground").ignoresSafeArea())
         .navigationTitle(holiday.displayName)
+        .navigationBarTitleDisplayMode(.inline)
+    }
+}
+
+private struct ZakatNotificationDetailView: View {
+    @Binding var setting: ZakatNotificationSetting
+
+    private var timeBinding: Binding<Date> {
+        Binding(
+            get: {
+                var comps = DateComponents()
+                comps.hour = setting.hour
+                comps.minute = setting.minute
+                return Calendar.current.date(from: comps) ?? Date()
+            },
+            set: { newDate in
+                let comps = Calendar.current.dateComponents([.hour, .minute], from: newDate)
+                setting.hour = comps.hour ?? 9
+                setting.minute = comps.minute ?? 0
+            }
+        )
+    }
+
+    var body: some View {
+        Form {
+            Section {
+                Toggle("An Zakat-Stichtage erinnern", isOn: $setting.isEnabled)
+            } footer: {
+                Text("Gilt für alle Kalendereinträge, die du als Zakat-Stichtag markiert hast. Ist dieser Schalter aus, bleiben die Einträge im Kalender sichtbar, aber es wird keine Erinnerung geplant.")
+            }
+
+            if setting.isEnabled {
+                Section("Zeitpunkt") {
+                    Toggle("Zusätzlich am Vortag erinnern", isOn: $setting.notifyDayBefore)
+                }
+
+                Section("Uhrzeit") {
+                    DatePicker("Uhrzeit", selection: timeBinding, displayedComponents: .hourAndMinute)
+                }
+            }
+
+            Section("Hinweis") {
+                Text("Die App berechnet oder prüft keine Zakat – sie erinnert nur an den Termin, den du selbst eingetragen hast.")
+                Text("Bei „Jährlich nach Hijri-Datum wiederholen“ fällt eine Erinnerung in einem Jahr ohne diesen Hijri-Tag (z. B. den 30. eines kürzeren Monats) für dieses eine Jahr ersatzlos aus.")
+            }
+            .font(.caption)
+            .foregroundStyle(.secondary)
+        }
+        .scrollContentBackground(.hidden)
+        .background(Color("AppBackground").ignoresSafeArea())
+        .navigationTitle("Zakat-Stichtage")
         .navigationBarTitleDisplayMode(.inline)
     }
 }
