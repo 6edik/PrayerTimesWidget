@@ -296,7 +296,10 @@ struct ManualQueryView: View {
 
                             row("Fajr", result.displayTimes.fajr)
                             row("Shuruk", result.displayTimes.shuruk)
-                            row("Dhuhr", result.displayTimes.dhuhr)
+                            row(
+                                PrayerDisplayNaming.dhuhrLabel(date: result.date, timezoneIdentifier: result.displayTimes.timezone),
+                                result.displayTimes.dhuhr
+                            )
                             row("Asr", result.displayTimes.asr)
                             row("Maghrib", result.displayTimes.maghrib)
                             row("Isha", result.displayTimes.isha)

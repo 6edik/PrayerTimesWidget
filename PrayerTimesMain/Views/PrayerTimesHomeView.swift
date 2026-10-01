@@ -25,13 +25,13 @@ struct PrayerTimesHomeView: View {
     @State private var prayerTimes = PrayerTimesHomeView.placeholderTimes
 
     @State private var currentAddress = "--"
-    @State private var currentLocation: PrayerLocation?
     @State private var currentMethod = "--"
     @State private var needsLocationConfirmation = false
     @State private var isLoading = false
     @State private var errorMessage: String?
     @State private var activeSheet: ActiveSheet?
     @State private var hasLoadedInitially = false
+    @State private var lastThirdWindow: LastThirdOfNightResolver.ResolvedWindow?
 
     enum ActiveSheet: Identifiable {
         case settings
@@ -68,7 +68,7 @@ struct PrayerTimesHomeView: View {
 
                 HStack(spacing: 8) {
                     if prayerTimes.readableDay != "--" {
-                        Text(prayerTimes.readableDay)
+                        Text(Self.germanWeekday(for: prayerTimes.readableDay))
                             .font(.subheadline)
                             .foregroundStyle(.secondary)
                     }
@@ -91,12 +91,6 @@ struct PrayerTimesHomeView: View {
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
 
-                if let currentLocation, currentLocation.coordinate.isPlausible {
-                    Text(LocationDisplayFormatter.line(for: currentLocation))
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-
                 if needsLocationConfirmation {
                     Button {
                         activeSheet = .settings
@@ -113,11 +107,19 @@ struct PrayerTimesHomeView: View {
                     .foregroundStyle(.secondary)
 
                 ForEach(PrayerTimesMapper.rows(from: prayerTimes)) { row in
-                    HStack {
-                        Text(row.name)
-                        Spacer()
-                        Text(row.time)
-                            .fontWeight(.semibold)
+                    VStack(alignment: .leading, spacing: 4) {
+                        HStack {
+                            Text(row.name)
+                            Spacer()
+                            Text(row.time)
+                                .fontWeight(.semibold)
+                        }
+
+                        if row.name == "Jum'ah" {
+                            Text(PrayerDisplayNaming.khutbaClarificationCaption)
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                        }
                     }
                     .padding()
                     .background(.thinMaterial)
@@ -138,6 +140,18 @@ struct PrayerTimesHomeView: View {
                             )
                     }
                     .shadow(color: .black.opacity(0.16), radius: 16, y: 8)
+                }
+
+                if let lastThirdWindow {
+                    HStack {
+                        Text("Letztes Drittel der Nacht")
+                        Spacer()
+                        Text("\(clockText(lastThirdWindow.start, timezoneIdentifier: lastThirdWindow.timezoneIdentifier)) – \(clockText(lastThirdWindow.end, timezoneIdentifier: lastThirdWindow.timezoneIdentifier))")
+                            .fontWeight(.semibold)
+                    }
+                    .padding()
+                    .background(.thinMaterial)
+                    .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
                 }
 
                 if isLoading {
@@ -222,7 +236,6 @@ struct PrayerTimesHomeView: View {
         let autoSettings = settingsStore.loadAutoSettings()
 
         currentAddress = autoSettings.address
-        currentLocation = autoSettings.location
         currentMethod = autoSettings.method.title
         needsLocationConfirmation = settingsStore.needsLocationConfirmation()
 
@@ -280,5 +293,36 @@ struct PrayerTimesHomeView: View {
         } else {
             prayerTimes = Self.placeholderTimes
         }
+
+        lastThirdWindow = LastThirdOfNightResolver.window(store: store, settings: autoSettings)
+    }
+
+    /// AlAdhan's own Gregorian weekday name always comes back in English
+    /// (e.g. "Thursday") — translated here purely for display, since the
+    /// rest of the app (cache keys, notification scheduling) never reads
+    /// this field for anything but display either.
+    private static let germanWeekdayNames: [String: String] = [
+        "Monday": "Montag",
+        "Tuesday": "Dienstag",
+        "Wednesday": "Mittwoch",
+        "Thursday": "Donnerstag",
+        "Friday": "Freitag",
+        "Saturday": "Samstag",
+        "Sunday": "Sonntag"
+    ]
+
+    private static func germanWeekday(for englishWeekday: String) -> String {
+        germanWeekdayNames[englishWeekday] ?? englishWeekday
+    }
+
+    /// Formats an already-resolved absolute `Date` as a clock time in the
+    /// *prayer location's* own timezone — never the device's — so it
+    /// reads consistently with the location's other "HH:mm" prayer times.
+    private func clockText(_ date: Date, timezoneIdentifier: String) -> String {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = TimeZone(identifier: timezoneIdentifier) ?? .current
+        formatter.dateFormat = "HH:mm"
+        return formatter.string(from: date)
     }
 }

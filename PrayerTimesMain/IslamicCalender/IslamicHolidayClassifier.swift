@@ -80,7 +80,22 @@ enum IslamicHolidayClassifier {
         return HijriHolidayKey(day: day, month: month)
     }
 
+    /// AlAdhan occasionally lists a differently-titled entry (e.g. a
+    /// regional "Urs" or "Birth of …"/"Birthday …" observance) under the
+    /// *exact* same Hijri (day, month) as one of the 8 curated holidays —
+    /// a genuine date collision, not a mismatch. Titles containing these
+    /// keywords are excluded unconditionally, even in that exact
+    /// collision: the app never shows them regardless of what else falls
+    /// on the same day.
+    private static let excludedTitleKeywords = ["urs", "birth"]
+
+    private static func hasExcludedTitle(_ specialDay: IslamicSpecialDay) -> Bool {
+        let normalized = specialDay.title.folding(options: [.diacriticInsensitive, .caseInsensitive], locale: .current)
+        return excludedTitleKeywords.contains { normalized.contains($0) }
+    }
+
     static func isMajorHoliday(_ specialDay: IslamicSpecialDay, hijriCalendar: Calendar) -> Bool {
+        guard !hasExcludedTitle(specialDay) else { return false }
         guard let key = hijriHolidayKey(for: specialDay, hijriCalendar: hijriCalendar) else {
             return false
         }
@@ -88,6 +103,7 @@ enum IslamicHolidayClassifier {
     }
 
     static func majorHoliday(for specialDay: IslamicSpecialDay, hijriCalendar: Calendar) -> MajorIslamicHoliday? {
+        guard !hasExcludedTitle(specialDay) else { return nil }
         guard let key = hijriHolidayKey(for: specialDay, hijriCalendar: hijriCalendar) else {
             return nil
         }

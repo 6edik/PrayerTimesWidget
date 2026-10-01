@@ -86,7 +86,7 @@ struct PrayerTimesWidgetView: View {
 
                 smallPrayerRow(
                     icon: "sun.max.fill",
-                    title: "Dhuhr",
+                    title: dhuhrTitle,
                     time: entry.times.dhuhr,
                     isActive: highlights.primary == "Dhuhr"
                 )
@@ -265,6 +265,22 @@ struct PrayerTimesWidgetView: View {
                     .foregroundStyle(Color.white.opacity(0.48))
                 }
 
+                if let lastThird = lastThirdOfNightWindow() {
+                    Text("Letztes Drittel \(clockText(lastThird.start, timezoneIdentifier: lastThird.timezoneIdentifier))–\(clockText(lastThird.end, timezoneIdentifier: lastThird.timezoneIdentifier))")
+                        .font(.system(size: 9, weight: .medium, design: .serif))
+                        .foregroundStyle(Color.white.opacity(0.55))
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.8)
+                }
+
+                if let qiratLabel = activeQiratLabel() {
+                    Text(qiratLabel)
+                        .font(.system(size: 9, weight: .semibold, design: .serif))
+                        .foregroundStyle(Color.orange.opacity(0.9))
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.8)
+                }
+
                 Spacer(minLength: 0)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -286,7 +302,7 @@ struct PrayerTimesWidgetView: View {
                 )
 
                 mediumPrayerRow(
-                    title: "Dhuhr",
+                    title: dhuhrTitle,
                     time: entry.times.dhuhr,
                     isCurrent: highlights.current == "Dhuhr",
                     isNext: highlights.next == "Dhuhr"
@@ -494,12 +510,21 @@ struct PrayerTimesWidgetView: View {
             HStack(spacing: 0) {
                 prayerLockTile(symbol: "sparkles", short: "FJR", time: entry.times.fajr, showDivider: true)
                 prayerLockTile(symbol: "sunrise.fill", short: "SRK", time: entry.times.shuruk, showDivider: true)
-                prayerLockTile(symbol: "sun.max.fill", short: "DHR", time: entry.times.dhuhr, showDivider: true)
+                prayerLockTile(symbol: "sun.max.fill", short: dhuhrShortTitle, time: entry.times.dhuhr, showDivider: true)
                 prayerLockTile(symbol: "cloud.sun.fill", short: "ASR", time: entry.times.asr, showDivider: true)
                 prayerLockTile(symbol: "sunset.fill", short: "MGB", time: entry.times.maghrib, showDivider: true)
                 prayerLockTile(symbol: "moon.stars.fill", short: "ISH", time: entry.times.isha, showDivider: false)
             }
             .frame(maxWidth: .infinity)
+
+            if let lastThird = lastThirdOfNightWindow() {
+                Text("Letztes Drittel \(clockText(lastThird.start, timezoneIdentifier: lastThird.timezoneIdentifier))–\(clockText(lastThird.end, timezoneIdentifier: lastThird.timezoneIdentifier))")
+                    .font(.system(size: 8, weight: .light, design: .serif))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
+                    .frame(maxWidth: .infinity, alignment: .center)
+            }
         }
         .padding(.horizontal, 2)
     }
@@ -533,6 +558,44 @@ struct PrayerTimesWidgetView: View {
 
     private func dayNumber() -> String {
         HijriDateFormatting.dayText(for: entry.date)
+    }
+
+    /// `nil` whenever a required previous/next cached day is missing —
+    /// never a fabricated window.
+    private func lastThirdOfNightWindow() -> LastThirdOfNightResolver.ResolvedWindow? {
+        let autoSettings = settingsStore.loadAutoSettings()
+        return LastThirdOfNightResolver.window(now: entry.date, store: store, settings: autoSettings)
+    }
+
+    /// `nil` unless `entry.date` currently falls inside the Sonnenaufgangs-
+    /// Karāha window (starts exactly at Shuruk, never Fajr) or the
+    /// approximate Karāha-vor-Maghrib window (see `QiratTimeResolver`) — a
+    /// live "avoid voluntary prayer right now" indicator, not a static
+    /// schedule (that's the Home screen's job — which no longer shows
+    /// Karāha at all). Never implies Asr itself is impermissible — the
+    /// pre-Maghrib window only ever starts a fixed approximation before
+    /// Maghrib, never at Asr.
+    private func activeQiratLabel() -> String? {
+        let autoSettings = settingsStore.loadAutoSettings()
+        let windows = QiratTimeResolver.windows(now: entry.date, store: store, settings: autoSettings)
+
+        if let window = windows.sunriseKaraha, entry.date >= window.start, entry.date < window.end {
+            return "Karāha (Sonnenaufgang)"
+        }
+        if let window = windows.lateMaghribKaraha, entry.date >= window.start, entry.date < window.end {
+            return "Karāha (vor Maghrib)"
+        }
+        return nil
+    }
+
+    /// Formats an already-resolved absolute `Date` as a clock time in the
+    /// *prayer location's* own timezone — never the device's.
+    private func clockText(_ date: Date, timezoneIdentifier: String) -> String {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = TimeZone(identifier: timezoneIdentifier) ?? .current
+        formatter.dateFormat = "HH:mm"
+        return formatter.string(from: date)
     }
 
     private func resolvedPrayerWindow() -> PrayerWindow {
@@ -606,6 +669,10 @@ struct PrayerTimesWidgetView: View {
                 currentTime: entry.times.fajr,
                 nextName: "Dhuhr",
                 nextTime: entry.times.dhuhr,
+                // Note: this fallback window's `nextName` is the internal
+                // "Dhuhr" key, translated to a display label by
+                // `displayName(for:)` wherever it's rendered — never shown
+                // as this literal string directly.
                 start: fallbackStart,
                 end: fallbackEnd,
                 progress: progressValue(now: now, start: fallbackStart, end: fallbackEnd)
@@ -659,7 +726,7 @@ struct PrayerTimesWidgetView: View {
         switch value {
         case "Fajr": return "FJR"
         case "Shuruk": return "SRK"
-        case "Dhuhr": return "DHR"
+        case "Dhuhr": return dhuhrShortTitle
         case "Asr": return "ASR"
         case "Maghrib": return "MGB"
         case "Isha": return "ISH"
@@ -670,10 +737,24 @@ struct PrayerTimesWidgetView: View {
     private func displayName(for value: String) -> String {
         switch value {
         case "Shuruk": return "Sunrise"
+        case "Dhuhr": return dhuhrTitle
         default: return value
         }
     }
 
+    /// Every "Dhuhr" moment reaching `displayName`/`shortLabel` here is
+    /// always *today's* Dhuhr (traced through `resolvedPrayerWindow()`:
+    /// only today's own moments carry the "Dhuhr" name — yesterday only
+    /// contributes Isha, tomorrow only Fajr), so `entry.date` is always the
+    /// correct calendar day for the Friday/Jum'ah check, in the location's
+    /// own timezone via `entry.times.timezone`.
+    private var dhuhrTitle: String {
+        PrayerDisplayNaming.dhuhrLabel(date: entry.date, timezoneIdentifier: entry.times.timezone)
+    }
+
+    private var dhuhrShortTitle: String {
+        PrayerDisplayNaming.dhuhrShortLabel(date: entry.date, timezoneIdentifier: entry.times.timezone)
+    }
 }
 
 extension View {

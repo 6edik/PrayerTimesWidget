@@ -151,10 +151,19 @@ struct IslamicDayEventsSheet: View {
                 VStack(spacing: 8) {
                     prayerRow("Fajr", adjusted.fajr)
                     prayerRow("Shuruq", adjusted.shuruk)
-                    prayerRow("Dhuhr", adjusted.dhuhr)
+                    prayerRow(
+                        PrayerDisplayNaming.dhuhrLabel(date: dayViewModel.date, timezoneIdentifier: raw.timezone),
+                        adjusted.dhuhr
+                    )
                     prayerRow("Asr", adjusted.asr)
                     prayerRow("Maghrib", adjusted.maghrib)
                     prayerRow("Isha", adjusted.isha)
+                }
+
+                if PrayerDisplayNaming.isJumuahDhuhr(date: dayViewModel.date, timezoneIdentifier: raw.timezone) {
+                    Text(PrayerDisplayNaming.khutbaClarificationCaption)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
                 }
 
                 if adjusted != raw {
@@ -254,13 +263,6 @@ struct IslamicDayEventsSheet: View {
                 Text(FastingDurationCalculator.formattedDuration(fasting.duration))
                     .fontWeight(.semibold)
             }
-
-            Text(
-                "Fajr \(FastingDurationCalculator.clockString(fasting.fajrDate, timezoneIdentifier: fasting.timezoneIdentifier))" +
-                " bis Maghrib \(FastingDurationCalculator.clockString(fasting.maghribDate, timezoneIdentifier: fasting.timezoneIdentifier))"
-            )
-            .font(.caption)
-            .foregroundStyle(.secondary)
         }
     }
 

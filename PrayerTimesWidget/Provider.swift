@@ -92,6 +92,24 @@ struct Provider: TimelineProvider {
     private func buildEntries(from now: Date, settings: AutoPrayerSettings) -> [PrayerEntry] {
         var dates: [Date] = [normalizedTimelineDate(now)]
 
+        // Only the boundary instant where "Letztes Drittel der Nacht"
+        // begins — never periodic ticks — so the widget refreshes exactly
+        // when the window starts, without extra API requests.
+        if let lastThird = LastThirdOfNightResolver.window(now: now, store: store, settings: settings),
+           lastThird.start > now {
+            dates.append(normalizedTimelineDate(lastThird.start))
+        }
+
+        // Same idea for the Karāha boundaries: only their start/end
+        // instants, so the widget's "active now" indicator flips exactly
+        // on time without periodic ticks.
+        let qiratWindows = QiratTimeResolver.windows(now: now, store: store, settings: settings)
+        for boundary in [qiratWindows.sunriseKaraha?.start, qiratWindows.sunriseKaraha?.end, qiratWindows.lateMaghribKaraha?.start, qiratWindows.lateMaghribKaraha?.end] {
+            if let boundary, boundary > now {
+                dates.append(normalizedTimelineDate(boundary))
+            }
+        }
+
         let todayRaw = store.load(for: now, settings: settings) ?? fallback
         let todayAdjusted = todayRaw.applyingAdjustmentsWithDayOffsets(settings.adjustments)
 

@@ -195,18 +195,14 @@ struct IslamicCalendarHighlightTests {
         #expect(viewModel.isHighlightedHoliday(for: ursDate) == false)
     }
 
-    /// Documented, user-approved limitation: AlAdhan's data model attaches
-    /// every named entry for a Gregorian day to that same day's single
-    /// Hijri (day, month) — so if AlAdhan itself ever lists a second,
-    /// differently-titled entry (e.g. a regional "Urs") under the *exact*
-    /// same Hijri day/month as one of the 8 curated holidays, the
-    /// hijriKey-only match (reused as-is from the existing Feiertage-
-    /// übersicht/notification logic, never a title search) cannot tell
-    /// them apart and both are treated as relevant. Confirmed acceptable:
-    /// this mirrors the pre-existing overview/notification behavior
-    /// exactly and only affects a genuine key collision, not the ordinary
-    /// "unrelated Urs entry" case covered above.
-    @Test func genuineHijriKeyCollisionKeepsBothEntriesByDesign() async throws {
+    /// AlAdhan's data model attaches every named entry for a Gregorian day
+    /// to that same day's single Hijri (day, month) — so AlAdhan can list
+    /// a second, differently-titled entry (e.g. a regional "Urs") under
+    /// the *exact* same Hijri day/month as one of the 8 curated holidays.
+    /// Title-based exclusion (`IslamicHolidayClassifier.hasExcludedTitle`)
+    /// catches this even though the date-only key matches: the Urs entry
+    /// is dropped regardless, and only the genuine holiday survives.
+    @Test func titleExcludedEntrySharingAHolidaysExactHijriKeyIsStillDropped() async throws {
         let suite1 = makeSuiteName(); let suite2 = makeSuiteName()
         defer { cleanup([suite1, suite2]) }
         let calendarStore = SharedIslamicCalendarStore(suiteName: suite1)
@@ -218,7 +214,7 @@ struct IslamicCalendarHighlightTests {
         await loadDays([eidAlFitr, ursEntry], into: viewModel, calendarStore: calendarStore, referenceDate: date)
 
         let dayEvents = viewModel.allEventsForDay(date)
-        #expect(dayEvents.count == 2)
+        #expect(dayEvents.map(\.title) == ["Eid al-Fitr"])
         #expect(viewModel.isHighlightedHoliday(for: date) == true)
     }
 
@@ -266,10 +262,6 @@ struct IslamicCalendarHighlightTests {
         let date = Date()
         let year = deviceCalendar.component(.year, from: date)
 
-        // Non-colliding Hijri key for the Urs entry — a real "Urs of …"
-        // observance has its own, unrelated Hijri date; only a genuine
-        // key *collision* (a separate, documented, accepted case) makes
-        // the classifier unable to tell two same-keyed entries apart.
         let eidAlFitr = makeSpecialDay(title: "Eid al-Fitr", hijriDay: "1", hijriMonthNumber: 10, sortDate: date)
         let ursEntry = makeSpecialDay(title: "Urs of A", hijriDay: "6", hijriMonthNumber: 3, sortDate: date)
         calendarStore.saveYear(year, days: [eidAlFitr, ursEntry])

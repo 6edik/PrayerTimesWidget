@@ -185,12 +185,22 @@ private struct CachedPrayerDayDetailView: View {
     let dayOffsets: PrayerDayOffsets
     let showRaw: Bool
 
+    /// This specific cached day's own calendar day, in its own timezone —
+    /// never the device's — so the Friday/Jum'ah check below always
+    /// matches the day actually being shown, not "today".
+    private var dhuhrTitle: String {
+        guard let dayStart = PrayerMomentResolver.dayStart(
+            isoDate: day.isoDate, timezoneIdentifier: displayTimes.timezone
+        ) else { return "Dhuhr" }
+        return PrayerDisplayNaming.dhuhrLabel(date: dayStart, timezoneIdentifier: displayTimes.timezone)
+    }
+
     var body: some View {
         Form {
             Section {
                 row("Fajr", displayTimes.fajr, dayOffset: dayOffsets.fajr)
                 row("Sonnenaufgang", displayTimes.shuruk, dayOffset: dayOffsets.shuruk)
-                row("Dhuhr", displayTimes.dhuhr, dayOffset: dayOffsets.dhuhr)
+                row(dhuhrTitle, displayTimes.dhuhr, dayOffset: dayOffsets.dhuhr)
                 row("Asr", displayTimes.asr, dayOffset: dayOffsets.asr)
                 row("Maghrib", displayTimes.maghrib, dayOffset: dayOffsets.maghrib)
                 row("Isha", displayTimes.isha, dayOffset: dayOffsets.isha)

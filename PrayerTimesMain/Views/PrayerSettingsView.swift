@@ -38,6 +38,11 @@ struct PrayerSettingsView: View {
     @State private var maghribAdjustment = 0
     @State private var ishaAdjustment = 0
 
+    // Orientation values only, not computed fiqh boundaries — see
+    // `QiratTimeResolver`'s doc comment.
+    @State private var lateKerahetOffsetMinutes = QiratTimeResolver.defaultLateKerahetOffsetMinutes
+    @State private var sunriseKarahaOffsetMinutes = QiratTimeResolver.defaultSunriseKarahaOffsetMinutes
+
     @State private var didLoadInitialValues = false
     @State private var isApplyingCurrentLocation = false
 
@@ -155,7 +160,12 @@ struct PrayerSettingsView: View {
 
             Form {
                 Section("Darstellung") {
-                    Toggle("Dunkelmodus", isOn: $appearance.isDarkModeEnabled)
+                    Picker("Erscheinungsbild", selection: $appearance.appearanceMode) {
+                        ForEach(AppAppearance.allCases, id: \.self) { mode in
+                            Text(mode.title).tag(mode)
+                        }
+                    }
+                    .pickerStyle(.segmented)
                 }
 
                 Section("Gebetsprofil") {
@@ -259,6 +269,38 @@ struct PrayerSettingsView: View {
                     adjustmentRow(title: "Isha", value: $ishaAdjustment)
                 }
 
+                Section {
+                    Stepper(value: $sunriseKarahaOffsetMinutes, in: 10...30, step: 5) {
+                        HStack {
+                            Text("Näherungswert nach Sonnenaufgang")
+                            Spacer()
+                            Text("\(sunriseKarahaOffsetMinutes) Min.")
+                                .foregroundStyle(.secondary)
+                                .monospacedDigit()
+                        }
+                    }
+                } header: {
+                    Text("Karāha nach Sonnenaufgang")
+                } footer: {
+                    Text("Beginnt exakt mit Shuruk (Sonnenaufgang), nie mit Fajr. Das Ende ist nur eine Näherung (ungefähr 15–20 Minuten), keine minutengenaue astronomische oder fiqh-rechtliche Grenze.")
+                }
+
+                Section {
+                    Stepper(value: $lateKerahetOffsetMinutes, in: 15...90, step: 5) {
+                        HStack {
+                            Text("Näherungswert vor Maghrib")
+                            Spacer()
+                            Text("\(lateKerahetOffsetMinutes) Min.")
+                                .foregroundStyle(.secondary)
+                                .monospacedDigit()
+                        }
+                    }
+                } header: {
+                    Text("Karāha vor Maghrib")
+                } footer: {
+                    Text("Kein exakt berechneter fiqh-rechtlicher Grenzwert – AlAdhan liefert keinen orts- und tagesgenauen Zeitpunkt für den Beginn dieser Phase. Dieser Minutenwert ist nur eine Näherung für gemäßigte Regionen und wird bei sehr hohen Breitengraden gar nicht erst angezeigt.")
+                }
+
                 Section("Hinweis") {
                     Text("Die API-Werte bleiben im Cache unverändert. Die Minuten-Justierung wird erst bei der Anzeige in App und Widget angewendet.")
                         .foregroundStyle(.secondary)
@@ -310,7 +352,9 @@ struct PrayerSettingsView: View {
                             address: address,
                             location: location,
                             method: method,
-                            adjustments: adjustments
+                            adjustments: adjustments,
+                            lateKerahetOffsetMinutes: lateKerahetOffsetMinutes,
+                            sunriseKarahaOffsetMinutes: sunriseKarahaOffsetMinutes
                         )
 
                         onSaved()
@@ -345,6 +389,9 @@ struct PrayerSettingsView: View {
                 asrAdjustment = savedAdjustments.asr
                 maghribAdjustment = savedAdjustments.maghrib
                 ishaAdjustment = savedAdjustments.isha
+
+                lateKerahetOffsetMinutes = viewModel.autoSettings.lateKerahetOffsetMinutes
+                sunriseKarahaOffsetMinutes = viewModel.autoSettings.sunriseKarahaOffsetMinutes
 
                 let parts = viewModel.autoSettings.address
                     .split(separator: ",", maxSplits: 1)
@@ -470,7 +517,7 @@ struct PrayerSettingsView: View {
 
 #Preview("Dark") {
     let appearance = AppearanceViewModel()
-    appearance.isDarkModeEnabled = true
+    appearance.appearanceMode = .dark
     return PrayerSettingsView(onSaved: {})
         .environmentObject(appearance)
         .preferredColorScheme(.dark)

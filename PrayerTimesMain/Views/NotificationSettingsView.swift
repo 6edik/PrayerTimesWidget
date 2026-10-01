@@ -36,6 +36,20 @@ struct NotificationSettingsView: View {
                     }
                 }
 
+                Section("Karāha") {
+                    NavigationLink {
+                        QiratNotificationDetailView(setting: bindingForQirat())
+                    } label: {
+                        HStack {
+                            Text("Sonnenaufgang & vor Maghrib (Näherung)")
+                            Spacer()
+                            Text(summaryText(for: settings.qirat))
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                }
+
                 Section("Freiwilliges Fasten") {
                     NavigationLink {
                         VoluntaryFastingNotificationDetailView(setting: bindingForVoluntaryFasting())
@@ -44,6 +58,20 @@ struct NotificationSettingsView: View {
                             Text("Montag, Donnerstag & Weiße Tage")
                             Spacer()
                             Text(summaryText(for: settings.voluntaryFasting))
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                }
+
+                Section("Zakat") {
+                    NavigationLink {
+                        ZakatNotificationDetailView(setting: bindingForZakat())
+                    } label: {
+                        HStack {
+                            Text("An Zakat-Stichtage erinnern")
+                            Spacer()
+                            Text(summaryText(for: settings.zakat))
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
                         }
@@ -62,20 +90,6 @@ struct NotificationSettingsView: View {
                                     .font(.caption)
                                     .foregroundStyle(.secondary)
                             }
-                        }
-                    }
-                }
-
-                Section("Zakat") {
-                    NavigationLink {
-                        ZakatNotificationDetailView(setting: bindingForZakat())
-                    } label: {
-                        HStack {
-                            Text("An Zakat-Stichtage erinnern")
-                            Spacer()
-                            Text(summaryText(for: settings.zakat))
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
                         }
                     }
                 }
@@ -183,6 +197,21 @@ struct NotificationSettingsView: View {
         )
     }
 
+    private func bindingForQirat() -> Binding<QiratTimesNotificationSetting> {
+        Binding(
+            get: { settings.qirat },
+            set: { newValue in
+                let wasEnabled = settings.qirat.isEnabled
+                settings.qirat = newValue
+                persistAndReschedule()
+
+                if newValue.isEnabled, !wasEnabled {
+                    Task { await requestPermissionIfNeeded() }
+                }
+            }
+        )
+    }
+
     // Only reaches the system prompt once, on the transition to enabled —
     // never automatically on appear.
     private func requestPermissionIfNeeded() async {
@@ -227,6 +256,10 @@ struct NotificationSettingsView: View {
     private func summaryText(for setting: ZakatNotificationSetting) -> String {
         guard setting.isEnabled else { return "Aus" }
         return setting.notifyDayBefore ? "An · Vortag & am Tag" : "An · Am Tag"
+    }
+
+    private func summaryText(for setting: QiratTimesNotificationSetting) -> String {
+        setting.isEnabled ? "An" : "Aus"
     }
 }
 
@@ -414,6 +447,43 @@ private struct ZakatNotificationDetailView: View {
         .scrollContentBackground(.hidden)
         .background(Color("AppBackground").ignoresSafeArea())
         .navigationTitle("Zakat-Stichtage")
+        .navigationBarTitleDisplayMode(.inline)
+    }
+}
+
+private struct QiratNotificationDetailView: View {
+    @Binding var setting: QiratTimesNotificationSetting
+
+    var body: some View {
+        Form {
+            Section {
+                Toggle("An Karāha erinnern", isOn: $setting.isEnabled)
+            } footer: {
+                Text("Erinnert zu Beginn zweier täglicher Zeitfenster: Sonnenaufgangs-Karāha ab Shuruk (ungefähr 15–20 Minuten), und einer Näherung kurz vor Maghrib.")
+            }
+
+            if setting.isEnabled {
+                Section("Ton") {
+                    Picker("Ton", selection: $setting.sound) {
+                        ForEach(NotificationSoundOption.allCases) { option in
+                            Text(option.title).tag(option)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                }
+            }
+
+            Section("Hinweis") {
+                Text("„Karāha\" bezeichnet hier Zeitfenster, die nach überlieferter Auffassung für freiwillige Gebete ungünstig sind. Die fünf Pflichtgebete sind davon nicht betroffen.")
+                Text("Die Sonnenaufgangs-Karāha beginnt exakt mit Shuruk, nie mit Fajr. Das ist eine andere Zeit als die separate hanafitische Einschränkung für freiwillige Gebete zwischen Fajr und Sonnenaufgang, die hier nicht als Benachrichtigung angeboten wird.")
+                Text("Das Fenster vor Maghrib beginnt NICHT mit Asr – Asr bleibt bis Maghrib gültig. Beide Zeitfenster-Enden sind einstellbare Näherungswerte, keine exakten Grenzen, da keine orts- und tagesgenaue Quelle für den exakten Beginn dieser Phasen vorliegt. Anpassbar in den Zeitparametern.")
+            }
+            .font(.caption)
+            .foregroundStyle(.secondary)
+        }
+        .scrollContentBackground(.hidden)
+        .background(Color("AppBackground").ignoresSafeArea())
+        .navigationTitle("Karāha")
         .navigationBarTitleDisplayMode(.inline)
     }
 }

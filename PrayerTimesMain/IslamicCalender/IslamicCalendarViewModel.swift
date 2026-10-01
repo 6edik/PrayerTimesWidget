@@ -121,11 +121,14 @@ final class IslamicCalendarViewModel: ObservableObject {
         isHolidayOverviewLoading = false
     }
 
-    /// Every AlAdhan special day attached to `date`, unfiltered — feeds the
-    /// day sheet's event list. Includes entries like "Urs of …" or "Birth
-    /// of …" that are not one of the app's selected major holidays; never
-    /// used to decide the calendar grid's orange highlight (see
-    /// `isHighlightedHoliday(for:)`).
+    /// Every AlAdhan special day attached to `date` that survived
+    /// `IslamicHolidayClassifier.filterRelevant` — feeds the day sheet's
+    /// event list. `specialDays` itself is already filtered to the 8
+    /// curated holidays (title-excluded entries like "Urs of …"/"Birth of
+    /// …" are dropped even when they share their exact Hijri date with a
+    /// genuine holiday), so this never needs to filter again; it only
+    /// narrows down to `date`. Never used to decide the calendar grid's
+    /// orange highlight (see `isHighlightedHoliday(for:)`).
     func allEventsForDay(_ date: Date) -> [IslamicSpecialDay] {
         specialDays
             .filter { calendar.isDate($0.sortDate, inSameDayAs: date) }

@@ -151,8 +151,11 @@ struct NotificationSchedulerFastingTests {
 
         #expect(abs(candidate.fireDate.timeIntervalSince(expectedFire)) < 1)
         #expect(candidate.body.contains("Montag"))
-        #expect(candidate.body.contains("Fajr 04:30"))
-        #expect(candidate.body.contains("Maghrib 20:30"))
+        // Fajr 04:30 -> Maghrib 20:30 = 16 Std. exactly — but no clock
+        // times in the body, only the occasion and the duration.
+        #expect(candidate.body.contains("Fastendauer: ca. 16 Std."))
+        #expect(!candidate.body.contains("Fajr"))
+        #expect(!candidate.body.contains("Maghrib"))
     }
 
     @Test func thursdayReminderIsScheduledAfterWednesdaysMaghrib() async throws {
@@ -402,9 +405,9 @@ struct NotificationSchedulerFastingTests {
                 .first { $0.identifier == "\(NotificationScheduler.fastingIdentifierPrefix)\(mondayISO)" }
         )
 
-        #expect(candidate.body.contains("Fajr 04:20"))
-        #expect(candidate.body.contains("Maghrib 20:10"))
-        #expect(candidate.body.contains("15 Std. 50 Min."))
+        #expect(candidate.body.contains("Fastendauer: ca. 15 Std. 50 Min."))
+        #expect(!candidate.body.contains("Fajr"))
+        #expect(!candidate.body.contains("Maghrib"))
     }
 
     // MARK: - Missing/invalid prayer times: no invented duration

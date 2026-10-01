@@ -9,10 +9,11 @@ struct IslamicCalendarDayItem: Identifiable {
     let gregorianDayText: String
     let hijriText: String?
 
-    /// Every AlAdhan special day attached to this Gregorian date, unfiltered
-    /// — includes entries like "Urs of …" or "Birth of …" that are not one
-    /// of the app's selected major holidays. Used for the day sheet's event
-    /// list, never for deciding the orange highlight below.
+    /// Every AlAdhan special day attached to this Gregorian date that
+    /// survived `IslamicHolidayClassifier.filterRelevant` — entries like
+    /// "Urs of …" or "Birth of …" are dropped even when they share their
+    /// exact Hijri date with a genuine curated holiday. Used for the day
+    /// sheet's event list, never for deciding the orange highlight below.
     let allEventsForDay: [IslamicSpecialDay]
 
     /// True only when `allEventsForDay` contains one of the app's own

@@ -65,7 +65,9 @@ final class AutoPrayerViewModel: ObservableObject {
         address: String,
         location: PrayerLocation?,
         method: PrayerCalculationMethod,
-        adjustments: PrayerAdjustments
+        adjustments: PrayerAdjustments,
+        lateKerahetOffsetMinutes: Int? = nil,
+        sunriseKarahaOffsetMinutes: Int? = nil
     ) {
         let trimmed = address.trimmingCharacters(in: .whitespacesAndNewlines)
         let newAddress = trimmed.isEmpty ? PrayerLocation.defaultGelsenkirchen.name : trimmed
@@ -93,7 +95,9 @@ final class AutoPrayerViewModel: ObservableObject {
             address: newAddress,
             location: newLocation,
             method: method,
-            adjustments: adjustments
+            adjustments: adjustments,
+            lateKerahetOffsetMinutesOverride: lateKerahetOffsetMinutes,
+            sunriseKarahaOffsetMinutesOverride: sunriseKarahaOffsetMinutes
         )
 
         settingsStore.saveAutoSettings(updated)

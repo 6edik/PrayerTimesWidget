@@ -7,11 +7,14 @@ struct PrayerRow: Identifiable {
 }
 
 enum PrayerTimesMapper {
-    static func rows(from times: PrayerTimes) -> [PrayerRow] {
+    static func rows(from times: PrayerTimes, date: Date = Date()) -> [PrayerRow] {
         [
             PrayerRow(name: "Fajr", time: times.fajr),
             PrayerRow(name: "Shuruk", time: times.shuruk),
-            PrayerRow(name: "Dhuhr", time: times.dhuhr),
+            PrayerRow(
+                name: PrayerDisplayNaming.dhuhrLabel(date: date, timezoneIdentifier: times.timezone),
+                time: times.dhuhr
+            ),
             PrayerRow(name: "Asr", time: times.asr),
             PrayerRow(name: "Maghrib", time: times.maghrib),
             PrayerRow(name: "Isha", time: times.isha)

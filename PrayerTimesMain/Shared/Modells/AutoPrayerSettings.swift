@@ -19,6 +19,29 @@ struct AutoPrayerSettings: Codable, Equatable {
     var method: PrayerCalculationMethod = .ditib
     var adjustments: PrayerAdjustments = .zero
 
+    // Optional so settings saved before this field existed still decode
+    // (via the compiler-synthesized `decodeIfPresent`) with the default
+    // orientation value, instead of a decode failure that would reset the
+    // whole struct. `nil` means "use the default" — never persisted as a
+    // guessed concrete number. This is never a computed or fiqh-exact
+    // value; see `QiratTimeResolver`'s doc comment for why the late-
+    // Maghrib Kerahet window this controls is only ever an approximation.
+    var lateKerahetOffsetMinutesOverride: Int? = nil
+
+    var lateKerahetOffsetMinutes: Int {
+        lateKerahetOffsetMinutesOverride ?? QiratTimeResolver.defaultLateKerahetOffsetMinutes
+    }
+
+    // Same backward-compatible optionality pattern as
+    // `lateKerahetOffsetMinutesOverride` above, for the separate
+    // Sonnenaufgangs-Karāha approximation (Shuruk until approximately
+    // Shuruk + this many minutes — never Fajr-anchored).
+    var sunriseKarahaOffsetMinutesOverride: Int? = nil
+
+    var sunriseKarahaOffsetMinutes: Int {
+        sunriseKarahaOffsetMinutesOverride ?? QiratTimeResolver.defaultSunriseKarahaOffsetMinutes
+    }
+
     func asPrayerSettings(for date: Date = Date()) -> PrayerSettings {
         PrayerSettings(
             address: address,

@@ -35,23 +35,30 @@ struct RootView: View {
         // screen, sheet and popover presented anywhere below this point
         // (Home, calendar, Qibla, settings, day sheets) inherits this
         // environment value, so nothing else needs its own dark-mode code.
-        .preferredColorScheme(appearance.isDarkModeEnabled ? .dark : .light)
+        .preferredColorScheme(appearance.resolvedColorScheme)
         // `.preferredColorScheme` alone doesn't reliably reach the already-
         // running UIKit-hosted `.page`-style TabView (a UIPageViewController)
         // or sheets already on screen — their hosting controllers only pick
         // up a new trait collection on next creation, i.e. after a restart.
         // Explicitly pushing the override onto every window closes that gap
         // without recreating any view or losing navigation/input state.
-        .onChange(of: appearance.isDarkModeEnabled) { _, isDarkModeEnabled in
-            applyInterfaceStyleOverride(isDarkModeEnabled)
+        // `.unspecified` (for `.system`) makes UIKit itself keep following
+        // live system appearance changes from here on, with no extra code.
+        .onChange(of: appearance.appearanceMode) { _, mode in
+            applyInterfaceStyleOverride(mode)
         }
         .onAppear {
-            applyInterfaceStyleOverride(appearance.isDarkModeEnabled)
+            applyInterfaceStyleOverride(appearance.appearanceMode)
         }
     }
 
-    private func applyInterfaceStyleOverride(_ isDarkModeEnabled: Bool) {
-        let style: UIUserInterfaceStyle = isDarkModeEnabled ? .dark : .light
+    private func applyInterfaceStyleOverride(_ mode: AppAppearance) {
+        let style: UIUserInterfaceStyle
+        switch mode {
+        case .system: style = .unspecified
+        case .light: style = .light
+        case .dark: style = .dark
+        }
 
         for scene in UIApplication.shared.connectedScenes {
             guard let windowScene = scene as? UIWindowScene else { continue }
@@ -102,5 +109,5 @@ struct RootView: View {
     let appearance = AppearanceViewModel()
     return RootView()
         .environmentObject(appearance)
-        .onAppear { appearance.isDarkModeEnabled = true }
+        .onAppear { appearance.appearanceMode = .dark }
 }

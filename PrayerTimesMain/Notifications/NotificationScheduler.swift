@@ -40,6 +40,7 @@ struct NotificationScheduler {
     static let holidayIdentifierPrefix = "com.mertgedik.prayertimes.notif.holiday."
     static let fastingIdentifierPrefix = "com.mertgedik.prayertimes.notif.fasting."
     static let zakatIdentifierPrefix = "com.mertgedik.prayertimes.notif.zakat."
+    static let qiratIdentifierPrefix = "com.mertgedik.prayertimes.notif.qirat."
 
     private let timesStore: SharedPrayerTimesStore
     private let settingsStore: SharedPrayerSettingsStore
@@ -94,6 +95,7 @@ struct NotificationScheduler {
                 || notificationSettings.hasAnyHolidayEnabled
                 || notificationSettings.hasAnyVoluntaryFastingEnabled
                 || notificationSettings.hasAnyZakatEnabled
+                || notificationSettings.hasAnyQiratEnabled
         else {
             return
         }
@@ -120,6 +122,10 @@ struct NotificationScheduler {
 
         if notificationSettings.hasAnyZakatEnabled {
             candidates += zakatCandidates(settings: notificationSettings, now: now)
+        }
+
+        if notificationSettings.hasAnyQiratEnabled {
+            candidates += qiratCandidates(settings: notificationSettings)
         }
 
         let budget = await remainingBudget()
@@ -155,11 +161,13 @@ struct NotificationScheduler {
                     timezoneIdentifier: day.times.timezone
                 ) else { continue }
 
+                let displayName = self.displayName(for: kind, isoDate: isoDate, timezoneIdentifier: day.times.timezone)
+
                 result.append(NotificationCandidate(
                     identifier: "\(Self.prayerIdentifierPrefix)\(kind.rawValue).\(isoDate).start",
                     fireDate: fireDate,
-                    title: kind.displayName,
-                    body: "Es ist Zeit für \(kind.displayName).",
+                    title: displayName,
+                    body: "Es ist Zeit für \(displayName).",
                     sound: config.sound
                 ))
 
@@ -169,8 +177,8 @@ struct NotificationScheduler {
                     result.append(NotificationCandidate(
                         identifier: "\(Self.prayerIdentifierPrefix)\(kind.rawValue).\(isoDate).reminder",
                         fireDate: reminderDate,
-                        title: kind.displayName,
-                        body: "\(kind.displayName) beginnt in \(config.reminderLeadTime.rawValue) Minuten.",
+                        title: displayName,
+                        body: "\(displayName) beginnt in \(config.reminderLeadTime.rawValue) Minuten.",
                         sound: config.sound
                     ))
                 }
@@ -198,6 +206,18 @@ struct NotificationScheduler {
         case .maghrib: return adjustments.maghrib
         case .isha: return adjustments.isha
         }
+    }
+
+    /// The name shown in the actual fired notification for `kind` on this
+    /// specific `isoDate` — "Jum'ah" instead of "Dhuhr" on a Friday, judged
+    /// by the cached day's own location timezone. `PrayerNotificationKind
+    /// .displayName` itself (used generically in the settings toggle list,
+    /// not tied to any specific occurrence) stays untouched.
+    private func displayName(for kind: PrayerNotificationKind, isoDate: String, timezoneIdentifier: String) -> String {
+        guard kind == .dhuhr, let dayStart = PrayerMomentResolver.dayStart(isoDate: isoDate, timezoneIdentifier: timezoneIdentifier) else {
+            return kind.displayName
+        }
+        return PrayerDisplayNaming.dhuhrLabel(date: dayStart, timezoneIdentifier: timezoneIdentifier)
     }
 
     // MARK: - Holiday candidates
@@ -349,37 +369,33 @@ struct NotificationScheduler {
 
             let fireDate = eveMaghrib.addingTimeInterval(Double(fastingSettings.minutesAfterMaghrib) * 60)
 
-            // The "Fajr X bis Maghrib Y – Z Std." sentence is for the
-            // fasting day itself, via the shared `FastingDurationCalculator`
-            // (full Dates through `PrayerMomentResolver`, so a midnight-
-            // crossing adjustment is handled correctly, never a naive HH:mm
-            // string diff) — the same calculation the calendar day sheet
-            // uses, so the two can never quietly disagree. If either time
-            // fails to resolve (a malformed stored time, an invalid
-            // timezone), the entire sentence is omitted rather than showing
-            // a broken clock time next to no duration, or inventing either
-            // one. The reminder still fires with just the plain occasion
-            // sentence in that case (documented in the settings UI's
-            // "Hinweis" section).
-            let timesSentence: String?
+            // Only the occasion and the estimated duration — no Fajr/
+            // Maghrib clock times in the notification body. The duration
+            // is still computed from the fasting day's own adjusted Fajr
+            // and Maghrib (via the shared `FastingDurationCalculator`,
+            // full Dates through `PrayerMomentResolver`, so a midnight-
+            // crossing adjustment is handled correctly, never a naive
+            // HH:mm string diff) — the same calculation the calendar day
+            // sheet uses, so the two can never quietly disagree. If either
+            // time fails to resolve (a malformed stored time, an invalid
+            // timezone), the duration sentence is omitted entirely rather
+            // than inventing one. The reminder still fires with just the
+            // plain occasion sentence in that case (documented in the
+            // settings UI's "Hinweis" section).
+            let duration: String?
             if let fastingResult = FastingDurationCalculator.result(
                 isoDate: iso, times: day.times, adjustments: autoSettings.adjustments
             ) {
-                let fajrClock = FastingDurationCalculator.clockString(fastingResult.fajrDate, timezoneIdentifier: fastingResult.timezoneIdentifier)
-                let maghribClock = FastingDurationCalculator.clockString(fastingResult.maghribDate, timezoneIdentifier: fastingResult.timezoneIdentifier)
-                // `duration` already ends in "Std." or "Min." — no extra
-                // trailing period, or the sentence would end in "..".
-                let duration = FastingDurationCalculator.formattedDuration(fastingResult.duration)
-                timesSentence = "Voraussichtliche Fastenzeit: Fajr \(fajrClock) bis Maghrib \(maghribClock) – \(duration)"
+                duration = FastingDurationCalculator.formattedDuration(fastingResult.duration)
             } else {
-                timesSentence = nil
+                duration = nil
             }
 
             result.append(NotificationCandidate(
                 identifier: "\(Self.fastingIdentifierPrefix)\(iso)",
                 fireDate: fireDate,
                 title: "Morgen: freiwilliges Fasten",
-                body: Self.fastingBody(occasions: occasions, timesSentence: timesSentence),
+                body: Self.fastingBody(occasions: occasions, duration: duration),
                 sound: fastingSettings.sound
             ))
         }
@@ -387,10 +403,10 @@ struct NotificationScheduler {
         return result
     }
 
-    private static func fastingBody(occasions: VoluntaryFastingOccasions, timesSentence: String?) -> String {
+    private static func fastingBody(occasions: VoluntaryFastingOccasions, duration: String?) -> String {
         let occasionSentence = "Morgen ist \(occasions.displayLabel)."
-        guard let timesSentence else { return occasionSentence }
-        return "\(occasionSentence) \(timesSentence)"
+        guard let duration else { return occasionSentence }
+        return "\(occasionSentence) Fastendauer: ca. \(duration)."
     }
 
     /// The ISO ("yyyy-MM-dd") date string one calendar day before `iso`,
@@ -500,6 +516,80 @@ struct NotificationScheduler {
         return result
     }
 
+    // MARK: - Karāha candidates
+
+    /// One candidate per cached day for the Sonnenaufgangs-Karāha window
+    /// (starts exactly at Shuruk, never Fajr), and one for the Karāha-vor-
+    /// Maghrib **approximation** (see `QiratTimeResolver`'s doc comment)
+    /// — firing right at each window's own start. Both bodies are
+    /// deliberately short (no fiqh explanation in the push banner — that
+    /// belongs in the settings' info view instead). The pre-Maghrib body
+    /// never claims Asr itself is impermissible: Asr remains valid until
+    /// Maghrib; it only encourages not postponing it, and only where the
+    /// approximation is latitude-plausible. A day with no resolvable
+    /// window (missing/malformed cached times, or an out-of-range
+    /// latitude) simply contributes nothing for that day, never a guessed
+    /// time.
+    ///
+    /// Identifiers are stable across reschedules (`isoDate` + which
+    /// window), and `reschedule()` always removes every previously-owned
+    /// request under `qiratIdentifierPrefix` before rebuilding — so a
+    /// stale "afterFajr"/"beforeMaghrib"-suffixed request from an earlier
+    /// version of this feature (when the sunrise window was wrongly
+    /// anchored to Fajr instead of Shuruk, or the pre-Maghrib window to
+    /// Asr) is cleaned up the exact same way as any other request under
+    /// this prefix, without touching prayer/holiday/fasting/zakat
+    /// requests, which live under entirely separate prefixes.
+    func qiratCandidates(settings: NotificationSettings, now: Date = Date()) -> [NotificationCandidate] {
+        guard settings.qirat.isEnabled else { return [] }
+
+        let autoSettings = settingsStore.loadAutoSettings()
+        let cachedDays = timesStore.loadAllDays(settings: autoSettings)
+        guard !cachedDays.isEmpty else { return [] }
+
+        let latitude = autoSettings.location?.coordinate.latitude
+
+        var result: [NotificationCandidate] = []
+
+        for (isoDate, day) in cachedDays {
+            guard let dayStart = PrayerMomentResolver.dayStart(isoDate: isoDate, timezoneIdentifier: day.times.timezone) else {
+                continue
+            }
+
+            let windows = QiratTimeResolver.windows(
+                base: dayStart,
+                times: day.times,
+                adjustments: autoSettings.adjustments,
+                latitude: latitude,
+                lateKerahetOffsetMinutes: autoSettings.lateKerahetOffsetMinutes,
+                sunriseKarahaOffsetMinutes: autoSettings.sunriseKarahaOffsetMinutes
+            )
+
+            if let sunrise = windows.sunriseKaraha {
+                let endClock = FastingDurationCalculator.clockString(sunrise.end, timezoneIdentifier: sunrise.timezoneIdentifier)
+                result.append(NotificationCandidate(
+                    identifier: "\(Self.qiratIdentifierPrefix)sunriseKaraha.\(isoDate)",
+                    fireDate: sunrise.start,
+                    title: "Karāha",
+                    body: "Sonnenaufgang: Gebetspause bis ca. \(endClock).",
+                    sound: settings.qirat.sound
+                ))
+            }
+
+            if let lateMaghrib = windows.lateMaghribKaraha {
+                result.append(NotificationCandidate(
+                    identifier: "\(Self.qiratIdentifierPrefix)lateMaghribKaraha.\(isoDate)",
+                    fireDate: lateMaghrib.start,
+                    title: "Karāha vor Maghrib",
+                    body: "Maghrib nähert sich. Asr nicht aufschieben.",
+                    sound: settings.qirat.sound
+                ))
+            }
+        }
+
+        return result
+    }
+
     // MARK: - UNUserNotificationCenter plumbing
 
     private func remainingBudget() async -> Int {
@@ -520,6 +610,7 @@ struct NotificationScheduler {
             || identifier.hasPrefix(Self.holidayIdentifierPrefix)
             || identifier.hasPrefix(Self.fastingIdentifierPrefix)
             || identifier.hasPrefix(Self.zakatIdentifierPrefix)
+            || identifier.hasPrefix(Self.qiratIdentifierPrefix)
     }
 
     private func schedule(_ candidate: NotificationCandidate) async {
