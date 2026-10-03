@@ -67,15 +67,22 @@ struct IslamicCalendarDayCell: View {
     // Only `isHighlightedHoliday` (one of the app's curated
     // MajorIslamicHoliday cases) may turn the date number orange — an
     // ordinary AlAdhan entry like "Urs of …" that isn't one of those never
-    // does, even though it's still fully visible in the day sheet.
+    // does, even though it's still fully visible in the day sheet. The
+    // user's own Zakat-due-date gets its own color (green) — deliberately
+    // far from the Sunnah-fasting blue on the color wheel so the two are
+    // never visually confused, and never orange either, since it isn't an
+    // AlAdhan holiday — ranked just below it so a curated holiday is never
+    // silently overridden by a Zakat match on the same day.
     private var primaryTextColor: Color {
         if item.isHighlightedHoliday { return .orange }
+        if item.hasZakatDueDate { return .green }
         if isSunnahFastDay { return .blue }
         return item.isInDisplayedMonth ? .primary : .secondary
     }
 
     private var secondaryTextColor: Color {
         if item.isHighlightedHoliday { return .orange.opacity(0.95) }
+        if item.hasZakatDueDate { return .green.opacity(0.9) }
         if isSunnahFastDay { return .blue.opacity(0.82) }
         return .secondary
     }

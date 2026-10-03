@@ -130,11 +130,14 @@ struct NotificationSchedulerQiratTests {
         #expect(sunrise.fireDate == expectedSunriseStart)
         #expect(lateMaghrib.fireDate == expectedApproxStart)
 
-        // Short, concrete push texts — no fiqh explanation in the banner.
+        // Short, concrete push texts — no fiqh explanation, no full
+        // start–end span, in the banner. Both windows share the exact
+        // same title and the exact same "Gebetspause bis %@." template,
+        // only the inserted end time differs.
         #expect(sunrise.title == "Karāha")
-        #expect(sunrise.body == "Sonnenaufgang: Gebetspause bis ca. 07:35.")
-        #expect(lateMaghrib.title == "Karāha vor Maghrib")
-        #expect(lateMaghrib.body == "Maghrib nähert sich. Asr nicht aufschieben.")
+        #expect(sunrise.body == "Gebetspause bis 07:35.")
+        #expect(lateMaghrib.title == "Karāha")
+        #expect(lateMaghrib.body == "Gebetspause bis 18:00.")
     }
 
     @Test func lateMaghribBodyNeverClaimsAsrIsImpermissible() async throws {
@@ -155,8 +158,11 @@ struct NotificationSchedulerQiratTests {
         let candidates = scheduler.qiratCandidates(settings: qiratSettings(isEnabled: true))
 
         let lateMaghrib = try #require(candidates.first { $0.identifier.contains("lateMaghribKaraha") })
-        #expect(!lateMaghrib.body.localizedCaseInsensitiveContains("Asr ist nicht erlaubt"))
-        #expect(!lateMaghrib.body.localizedCaseInsensitiveContains("Asr darf nicht"))
+        // The compact body never mentions Asr at all anymore, so it can't
+        // be read as claiming Asr itself becomes impermissible at some
+        // point — Asr's own valid time still runs all the way to Maghrib.
+        #expect(!lateMaghrib.body.localizedCaseInsensitiveContains("Asr"))
+        #expect(lateMaghrib.body == "Gebetspause bis 18:00.")
     }
 
     @Test func customSunriseOffsetMinutesFromSettingsShiftsTheEndTimeInTheBody() async throws {
@@ -177,7 +183,7 @@ struct NotificationSchedulerQiratTests {
         let candidates = scheduler.qiratCandidates(settings: qiratSettings(isEnabled: true))
 
         let sunrise = try #require(candidates.first { $0.identifier.contains("sunriseKaraha") })
-        #expect(sunrise.body == "Sonnenaufgang: Gebetspause bis ca. 07:30.")
+        #expect(sunrise.body == "Gebetspause bis 07:30.")
     }
 
     @Test func customLateMaghribOffsetMinutesFromSettingsIsUsed() async throws {
@@ -255,6 +261,40 @@ struct NotificationSchedulerQiratTests {
         // valid) must still be produced.
         #expect(candidates.count == 1)
         #expect(candidates.first?.identifier.contains("lateMaghribKaraha") == true)
+    }
+
+    // MARK: - Exact compact wording for both Karāha windows
+
+    @Test func bothWindowsUseTheSameCompactTitleAndTemplateWithTheirOwnEndTime() async throws {
+        let timesSuite = makeSuiteName()
+        let settingsSuite = makeSuiteName()
+        defer { cleanup([timesSuite, settingsSuite]) }
+
+        let timesStore = SharedPrayerTimesStore(suiteName: timesSuite)
+        let settingsStore = SharedPrayerSettingsStore(suiteName: settingsSuite)
+        let autoSettings = berlinSettings()
+        settingsStore.saveAutoSettings(autoSettings)
+
+        // Maghrib at 12:48 so the late-Maghrib body matches the second
+        // example from the spec exactly ("Gebetspause bis 12:48.").
+        timesStore.replaceCache(with: makeCache(for: autoSettings, days: [
+            PrayerDay(isoDate: "2026-01-02", hijri: nil, times: makeTimes(fajr: "05:45", shuruk: "07:15", asr: "11:30", maghrib: "12:48"))
+        ]))
+
+        let scheduler = NotificationScheduler(timesStore: timesStore, settingsStore: settingsStore)
+        let candidates = scheduler.qiratCandidates(settings: qiratSettings(isEnabled: true))
+
+        for candidate in candidates {
+            #expect(candidate.title == "Karāha")
+            #expect(candidate.body.hasPrefix("Gebetspause bis "))
+            #expect(candidate.body.hasSuffix("."))
+            // No fiqh explanation and no full start–end span — just the
+            // one end-time sentence.
+            #expect(!candidate.body.contains("–"))
+        }
+
+        let lateMaghrib = try #require(candidates.first { $0.identifier.contains("lateMaghribKaraha") })
+        #expect(lateMaghrib.body == "Gebetspause bis 12:48.")
     }
 
     // MARK: - Old-style requests are replaced, other categories untouched

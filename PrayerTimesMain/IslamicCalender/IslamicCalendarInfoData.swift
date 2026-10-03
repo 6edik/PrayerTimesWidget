@@ -47,21 +47,21 @@ enum IslamicCalendarInfoData {
             badge: "M",
             summary: "Der Prophet fastete montags; es ist der Tag seiner Geburt und der Sendung.",
             detail: "Der Prophet ﷺ erklärte zum Fasten am Montag, dass dies der Tag sei, an dem er geboren wurde und an dem ihm die Offenbarung zuteilwurde.",
-            source: "Sahih Muslim 1162b"
+            source: "Sahih Muslim 1162e"
         ),
         .init(
             title: "Donnerstag",
             badge: "D",
             summary: "Montag und Donnerstag gehören zu den bekannten Tagen, an denen freiwilliges Fasten empfohlen ist.",
-            detail: "Im Kapitel über die empfohlenen Fasttage werden Montag und Donnerstag zusammen mit den drei Tagen jedes Monats genannt. Viele Gelehrte führen daraus die besondere Empfehlung dieser beiden Wochentage an.",
-            source: "Sahih Muslim 1162b, Kapitelüberschrift"
+            detail: "Der Prophet ﷺ sagte, dass die Taten der Menschen montags und donnerstags vorgelegt werden, und dass er es liebe, an diesen Tagen zu fasten, während seine eigenen Taten vorgelegt werden.",
+            source: "Jami' at-Tirmidhi 747 (hasan)"
         ),
         .init(
             title: "Weiße Tage",
             badge: "13–15",
-            summary: "Drei Tage in jedem Monat zu fasten gehört zur etablierten Sunnah.",
-            detail: "Der Prophet ﷺ empfahl, regelmäßig drei Tage jedes Monats zu fasten. In den Überlieferungen werden dafür insbesondere die weißen Tage, also der 13., 14. und 15. Tag des Hijri-Monats, genannt.",
-            source: "Sahih Muslim 1162b"
+            summary: "Der 13., 14. und 15. Tag jedes Hijri-Monats gehören zu den empfohlenen weißen Tagen.",
+            detail: "Nach einer Überlieferung wies der Prophet ﷺ an, an den weißen Tagen zu fasten, also am 13., 14. und 15. Tag des Monats.",
+            source: "Sunan Abi Dawud 2449"
         ),
         .init(
             title: "Sechs Tage in Shawwal",

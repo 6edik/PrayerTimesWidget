@@ -5,9 +5,11 @@ import Foundation
 /// Covers `NotificationScheduler.zakatCandidates` — the pure, testable
 /// candidate builder (same convention `NotificationSchedulerCandidateTests`
 /// uses for prayer/holiday candidates: no live `UNUserNotificationCenter`
-/// needed here). Every Zakat entry is defined by a fixed Hijri (day,
-/// month) rule and always recurs every Hijri year — there is no one-time
-/// variant and no Gregorian-anchor-based repeat.
+/// needed here). The Zakat due date is a single fixed Hijri (day, month)
+/// rule, stored in its own `ZakatDueDateStore` under "Besondere Tage" —
+/// entirely separate from "Meine Notizen" (`PersonalCalendarStore`) — and
+/// always recurs every Hijri year; there is no one-time variant and no
+/// Gregorian-anchor-based repeat.
 ///
 /// What `reschedule()` does with these candidates (removing every
 /// previously-owned request before rebuilding, checking system
@@ -15,10 +17,7 @@ import Foundation
 /// unchanged machinery already exercised for prayer/holiday/fasting
 /// candidates — extending `isOwnIdentifier`/`removeAllOwnPendingRequests`
 /// with the Zakat prefix reuses that same guarantee rather than
-/// duplicating it, so "no duplicates after repeated reschedule", "stale
-/// requests removed when disabled or permission is revoked", and "other
-/// categories untouched" aren't independently re-tested against a live
-/// center here.
+/// duplicating it.
 @MainActor
 struct NotificationSchedulerZakatTests {
     private func makeSuiteName() -> String {
@@ -32,7 +31,7 @@ struct NotificationSchedulerZakatTests {
     }
 
     private func makeScheduler(
-        personalCalendarSuite: String,
+        zakatSuite: String,
         timesStore: SharedPrayerTimesStore? = nil,
         settingsStore: SharedPrayerSettingsStore? = nil
     ) -> NotificationScheduler {
@@ -41,7 +40,7 @@ struct NotificationSchedulerZakatTests {
             settingsStore: settingsStore ?? SharedPrayerSettingsStore(suiteName: makeSuiteName()),
             notificationSettingsStore: NotificationSettingsStore(suiteName: makeSuiteName()),
             calendarStore: SharedIslamicCalendarStore(suiteName: makeSuiteName()),
-            personalCalendarStore: PersonalCalendarStore(suiteName: personalCalendarSuite)
+            zakatDueDateStore: ZakatDueDateStore(suiteName: zakatSuite)
         )
     }
 
@@ -57,63 +56,75 @@ struct NotificationSchedulerZakatTests {
 
     // MARK: - Disabled switch
 
-    @Test func disabledZakatSwitchProducesNoCandidatesEvenWithEntries() async throws {
+    @Test func disabledZakatSwitchProducesNoCandidatesEvenWithADueDate() async throws {
         let suite = makeSuiteName()
         defer { cleanup([suite]) }
-        let store = PersonalCalendarStore(suiteName: suite)
-        store.upsert(PersonalCalendarEntry(note: "Zakat", kind: .zakatDueDate, hijriDay: 1, hijriMonth: 9))
+        ZakatDueDateStore(suiteName: suite).save(ZakatDueDate(hijriDay: 1, hijriMonth: 9))
 
-        let scheduler = makeScheduler(personalCalendarSuite: suite)
+        let scheduler = makeScheduler(zakatSuite: suite)
         let candidates = scheduler.zakatCandidates(settings: zakatSettings(isEnabled: false))
         #expect(candidates.isEmpty)
     }
 
-    // MARK: - Plain notes are ignored
+    // MARK: - No due date configured
 
-    @Test func plainNotesNeverProduceZakatCandidates() async throws {
+    @Test func noConfiguredDueDateProducesNoCandidates() async throws {
         let suite = makeSuiteName()
         defer { cleanup([suite]) }
-        let store = PersonalCalendarStore(suiteName: suite)
-        store.upsert(PersonalCalendarEntry(note: "Nur eine Notiz", isoDate: "2027-05-01"))
 
-        let scheduler = makeScheduler(personalCalendarSuite: suite)
+        let scheduler = makeScheduler(zakatSuite: suite)
         let candidates = scheduler.zakatCandidates(settings: zakatSettings(isEnabled: true))
         #expect(candidates.isEmpty)
     }
 
-    // MARK: - Every Zakat entry recurs — several years produce several on-day candidates
+    // MARK: - Independence from "Meine Notizen"
 
-    @Test func zakatEntryProducesOneOnDayCandidatePerUpcomingHijriYear() async throws {
+    @Test func personalNotesNeverProduceZakatCandidatesEvenWithLegacyZakatShapedEntries() async throws {
+        let zakatSuite = makeSuiteName()
+        let personalSuite = makeSuiteName()
+        defer { cleanup([zakatSuite, personalSuite]) }
+
+        // Simulates a not-yet-migrated legacy entry sitting in the old
+        // "Meine Notizen" store — `zakatCandidates` must never read that
+        // store at all, only the dedicated `ZakatDueDateStore`.
+        PersonalCalendarStore(suiteName: personalSuite).upsert(
+            PersonalCalendarEntry(note: "Zakat", kind: .zakatDueDate, hijriDay: 1, hijriMonth: 9)
+        )
+
+        let scheduler = makeScheduler(zakatSuite: zakatSuite)
+        let candidates = scheduler.zakatCandidates(settings: zakatSettings(isEnabled: true))
+        #expect(candidates.isEmpty)
+    }
+
+    // MARK: - The rule recurs — several years produce several on-day candidates
+
+    @Test func dueDateProducesOneOnDayCandidatePerUpcomingHijriYear() async throws {
         let suite = makeSuiteName()
         defer { cleanup([suite]) }
-        let store = PersonalCalendarStore(suiteName: suite)
-        let entry = PersonalCalendarEntry(note: "Zakat", kind: .zakatDueDate, hijriDay: 1, hijriMonth: 9)
-        store.upsert(entry)
+        ZakatDueDateStore(suiteName: suite).save(ZakatDueDate(hijriDay: 1, hijriMonth: 9))
 
-        let scheduler = makeScheduler(personalCalendarSuite: suite)
+        let scheduler = makeScheduler(zakatSuite: suite)
         let candidates = scheduler.zakatCandidates(settings: zakatSettings(isEnabled: true, hour: 8, minute: 30))
 
         // Default `ZakatOccurrenceCalculator` limit is 3 upcoming years.
         #expect(candidates.count == 3)
         #expect(candidates.allSatisfy { $0.identifier.hasSuffix(".onday") })
         #expect(candidates.allSatisfy { $0.identifier.hasPrefix(NotificationScheduler.zakatIdentifierPrefix) })
-        #expect(candidates.allSatisfy { $0.identifier.contains(entry.id.uuidString) })
 
         // Distinct occurrence keys — never the same Gregorian date twice.
         #expect(Set(candidates.map(\.identifier)).count == 3)
 
-        // Always the same fixed, neutral sentence — never the entry's own
-        // note text (spec item 10).
-        #expect(candidates.allSatisfy { $0.body == "Dein eingetragener Zakat-Stichtag ist heute. Prüfe deine Zakat-Berechnung." })
+        // Always the same fixed, neutral sentence — never a claim that
+        // Zakat is actually due.
+        #expect(candidates.allSatisfy { $0.body == "Dein Zakat-Stichtag ist heute." })
     }
 
     @Test func dayBeforeToggleAddsASecondCandidatePerOccurrence() async throws {
         let suite = makeSuiteName()
         defer { cleanup([suite]) }
-        let store = PersonalCalendarStore(suiteName: suite)
-        store.upsert(PersonalCalendarEntry(note: "Zakat", kind: .zakatDueDate, hijriDay: 1, hijriMonth: 9))
+        ZakatDueDateStore(suiteName: suite).save(ZakatDueDate(hijriDay: 1, hijriMonth: 9))
 
-        let scheduler = makeScheduler(personalCalendarSuite: suite)
+        let scheduler = makeScheduler(zakatSuite: suite)
         let candidates = scheduler.zakatCandidates(settings: zakatSettings(isEnabled: true, notifyDayBefore: true))
 
         #expect(candidates.count == 6) // 3 onday + 3 before
@@ -135,10 +146,9 @@ struct NotificationSchedulerZakatTests {
     @Test func repeatedCallsProduceIdenticalCandidatesNeverDuplicates() async throws {
         let suite = makeSuiteName()
         defer { cleanup([suite]) }
-        let store = PersonalCalendarStore(suiteName: suite)
-        store.upsert(PersonalCalendarEntry(note: "Zakat", kind: .zakatDueDate, hijriDay: 15, hijriMonth: 6))
+        ZakatDueDateStore(suiteName: suite).save(ZakatDueDate(hijriDay: 15, hijriMonth: 6))
 
-        let scheduler = makeScheduler(personalCalendarSuite: suite)
+        let scheduler = makeScheduler(zakatSuite: suite)
         let settings = zakatSettings(isEnabled: true, notifyDayBefore: true)
 
         let first = scheduler.zakatCandidates(settings: settings)
@@ -150,33 +160,29 @@ struct NotificationSchedulerZakatTests {
 
     // MARK: - Editing/deleting reflects immediately in the next build
 
-    @Test func deletingTheEntryRemovesItFromTheNextCandidateBuild() async throws {
+    @Test func clearingTheDueDateRemovesItFromTheNextCandidateBuild() async throws {
         let suite = makeSuiteName()
         defer { cleanup([suite]) }
-        let store = PersonalCalendarStore(suiteName: suite)
-        let entry = PersonalCalendarEntry(note: "Zakat", kind: .zakatDueDate, hijriDay: 1, hijriMonth: 9)
-        store.upsert(entry)
+        let store = ZakatDueDateStore(suiteName: suite)
+        store.save(ZakatDueDate(hijriDay: 1, hijriMonth: 9))
 
-        let scheduler = makeScheduler(personalCalendarSuite: suite)
+        let scheduler = makeScheduler(zakatSuite: suite)
         #expect(!scheduler.zakatCandidates(settings: zakatSettings(isEnabled: true)).isEmpty)
 
-        store.delete(id: entry.id)
+        store.clear()
         #expect(scheduler.zakatCandidates(settings: zakatSettings(isEnabled: true)).isEmpty)
     }
 
     @Test func changingTheHijriRuleChangesTheCandidatesIdentifiers() async throws {
         let suite = makeSuiteName()
         defer { cleanup([suite]) }
-        let store = PersonalCalendarStore(suiteName: suite)
-        var entry = PersonalCalendarEntry(note: "Zakat", kind: .zakatDueDate, hijriDay: 1, hijriMonth: 9)
-        store.upsert(entry)
+        let store = ZakatDueDateStore(suiteName: suite)
+        store.save(ZakatDueDate(hijriDay: 1, hijriMonth: 9))
 
-        let scheduler = makeScheduler(personalCalendarSuite: suite)
+        let scheduler = makeScheduler(zakatSuite: suite)
         let before = Set(scheduler.zakatCandidates(settings: zakatSettings(isEnabled: true)).map(\.identifier))
 
-        entry.hijriDay = 20
-        entry.hijriMonth = 12
-        store.upsert(entry)
+        store.save(ZakatDueDate(hijriDay: 20, hijriMonth: 12))
 
         let after = Set(scheduler.zakatCandidates(settings: zakatSettings(isEnabled: true)).map(\.identifier))
         #expect(before.isDisjoint(with: after))
@@ -185,10 +191,9 @@ struct NotificationSchedulerZakatTests {
     @Test func changingTheReminderTimeChangesTheFireDateNotTheDay() async throws {
         let suite = makeSuiteName()
         defer { cleanup([suite]) }
-        let store = PersonalCalendarStore(suiteName: suite)
-        store.upsert(PersonalCalendarEntry(note: "Zakat", kind: .zakatDueDate, hijriDay: 1, hijriMonth: 9))
+        ZakatDueDateStore(suiteName: suite).save(ZakatDueDate(hijriDay: 1, hijriMonth: 9))
 
-        let scheduler = makeScheduler(personalCalendarSuite: suite)
+        let scheduler = makeScheduler(zakatSuite: suite)
         let before = try #require(scheduler.zakatCandidates(settings: zakatSettings(isEnabled: true, hour: 9, minute: 0)).first)
         let after = try #require(scheduler.zakatCandidates(settings: zakatSettings(isEnabled: true, hour: 14, minute: 15)).first)
 
@@ -219,16 +224,15 @@ struct NotificationSchedulerZakatTests {
         }
     }
 
-    // MARK: - Location timezone used for the reminder's clock time (spec item 7)
+    // MARK: - Location timezone used for the reminder's clock time
 
     @Test func usesTheConfiguredLocationsTimeZoneNotTheDevicesForTheFireTime() async throws {
-        let personalSuite = makeSuiteName()
+        let zakatSuite = makeSuiteName()
         let timesSuite = makeSuiteName()
         let settingsSuite = makeSuiteName()
-        defer { cleanup([personalSuite, timesSuite, settingsSuite]) }
+        defer { cleanup([zakatSuite, timesSuite, settingsSuite]) }
 
-        let store = PersonalCalendarStore(suiteName: personalSuite)
-        store.upsert(PersonalCalendarEntry(note: "Zakat", kind: .zakatDueDate, hijriDay: 1, hijriMonth: 9))
+        ZakatDueDateStore(suiteName: zakatSuite).save(ZakatDueDate(hijriDay: 1, hijriMonth: 9))
 
         // A location far from the device's own timezone (Tokyo, UTC+9),
         // via one cached prayer day carrying that timezone identifier —
@@ -257,7 +261,7 @@ struct NotificationSchedulerZakatTests {
         )
         timesStore.replaceCache(with: cache)
 
-        let scheduler = makeScheduler(personalCalendarSuite: personalSuite, timesStore: timesStore, settingsStore: settingsStore)
+        let scheduler = makeScheduler(zakatSuite: zakatSuite, timesStore: timesStore, settingsStore: settingsStore)
         let candidate = try #require(scheduler.zakatCandidates(settings: zakatSettings(isEnabled: true, hour: 9, minute: 0)).first)
 
         var tokyoCalendar = Calendar(identifier: .gregorian)
@@ -269,21 +273,20 @@ struct NotificationSchedulerZakatTests {
         #expect(comps.hour == 9 && comps.minute == 0)
     }
 
-    // MARK: - Isolation from the prayer-times cache / persistence (spec item 8)
+    // MARK: - Isolation from the prayer-times cache / persistence
 
-    @Test func zakatEntriesAreReadFromThePersonalCalendarStoreOnlyNeverThePrayerCache() async throws {
+    @Test func zakatIsReadFromItsOwnStoreOnlyNeverThePrayerCache() async throws {
         // Constructing the scheduler with an *empty*, separate prayer-times
-        // suite (no cached days at all) and a personal-calendar suite that
-        // does have a Zakat entry — candidates must still be produced
-        // purely from the personal store, confirming no dependency on the
+        // suite (no cached days at all) and a Zakat suite that does have a
+        // configured due date — candidates must still be produced purely
+        // from `ZakatDueDateStore`, confirming no dependency on the
         // prayer/AlAdhan caches for this feature (only the fire-time's
         // timezone falls back to `.current` when nothing is cached).
-        let personalSuite = makeSuiteName()
-        defer { cleanup([personalSuite]) }
-        let store = PersonalCalendarStore(suiteName: personalSuite)
-        store.upsert(PersonalCalendarEntry(note: "Zakat", kind: .zakatDueDate, hijriDay: 1, hijriMonth: 9))
+        let suite = makeSuiteName()
+        defer { cleanup([suite]) }
+        ZakatDueDateStore(suiteName: suite).save(ZakatDueDate(hijriDay: 1, hijriMonth: 9))
 
-        let scheduler = makeScheduler(personalCalendarSuite: personalSuite)
+        let scheduler = makeScheduler(zakatSuite: suite)
         let candidates = scheduler.zakatCandidates(settings: zakatSettings(isEnabled: true))
         #expect(!candidates.isEmpty)
     }

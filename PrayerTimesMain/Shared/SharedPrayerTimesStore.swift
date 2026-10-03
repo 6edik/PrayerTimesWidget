@@ -1,6 +1,6 @@
 import Foundation
 
-struct SharedPrayerTimesStore {
+nonisolated struct SharedPrayerTimesStore {
     // Defaults to the real App Group suite for every production call site.
     // Tests can pass a dedicated suite name so they don't read/write the
     // developer's real cached prayer times.

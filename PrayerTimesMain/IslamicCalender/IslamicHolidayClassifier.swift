@@ -110,21 +110,81 @@ enum IslamicHolidayClassifier {
         return MajorIslamicHoliday.allCases.first { $0.hijriKey == key }
     }
 
+    /// A stable identity for a special day, independent of its source
+    /// (AlAdhan API, a locally-synthesized entry like the user's own
+    /// Zakat-due-date occurrence, …). Built from the event's *category*
+    /// (one of the 8 curated `MajorIslamicHoliday` cases, or a
+    /// normalized-title fallback for anything else — e.g. the synthetic
+    /// Zakat entry), its Hijri date, its concrete Gregorian day, and its
+    /// normalized title — deliberately never the title alone, so two
+    /// genuinely different events that happen to land on the same day are
+    /// never collapsed into one.
+    struct SpecialDayDedupeKey: Hashable {
+        let category: String
+        let hijriDay: String
+        let hijriMonth: String
+        let hijriYear: String
+        let gregorianDayStart: TimeInterval
+        let normalizedTitle: String
+    }
+
+    static func dedupeKey(for specialDay: IslamicSpecialDay, hijriCalendar: Calendar) -> SpecialDayDedupeKey {
+        let category = majorHoliday(for: specialDay, hijriCalendar: hijriCalendar)?.rawValue
+            ?? specialDay.title.folding(options: [.diacriticInsensitive, .caseInsensitive], locale: .current)
+
+        var gregorianCalendar = Calendar(identifier: .gregorian)
+        gregorianCalendar.timeZone = .autoupdatingCurrent
+
+        return SpecialDayDedupeKey(
+            category: category,
+            hijriDay: specialDay.hijriDay,
+            hijriMonth: specialDay.hijriMonth,
+            hijriYear: specialDay.hijriYear,
+            gregorianDayStart: gregorianCalendar.startOfDay(for: specialDay.sortDate).timeIntervalSince1970,
+            normalizedTitle: specialDay.title.folding(options: [.diacriticInsensitive, .caseInsensitive], locale: .current)
+        )
+    }
+
+    /// Centrally removes exact duplicates — same category, same Hijri
+    /// date, same Gregorian day, same normalized title — and returns the
+    /// result in chronological order (ties broken by title, for a fully
+    /// deterministic order regardless of input order). The single place
+    /// every consumer of a mixed special-day list (the calendar grid, the
+    /// day sheet, the "Besondere Tage" overview, the holiday-notification
+    /// scheduler) goes through — directly or via `filterRelevant`, which
+    /// calls this too — so none of them can silently diverge on what
+    /// counts as "the same" special day. Keeps the first-sorted entry for
+    /// any given key; never merges two entries that differ in category,
+    /// date, or title, even if they land on the same day.
+    static func deduplicatedAndSorted(_ days: [IslamicSpecialDay], hijriCalendar: Calendar) -> [IslamicSpecialDay] {
+        let sorted = days.sorted {
+            $0.sortDate != $1.sortDate ? $0.sortDate < $1.sortDate : $0.title < $1.title
+        }
+
+        var seen = Set<SpecialDayDedupeKey>()
+        return sorted.filter { seen.insert(dedupeKey(for: $0, hijriCalendar: hijriCalendar)).inserted }
+    }
+
     /// The single, central filter for "which AlAdhan special days may this
     /// app ever keep": only entries matching one of the 8 curated
-    /// `MajorIslamicHoliday` cases survive. Everything else — "Urs of …",
-    /// "Birth of …"/"Birthday …" and any other personal/regional
-    /// observance AlAdhan happens to report — is dropped here.
+    /// `MajorIslamicHoliday` cases survive, and exact duplicates (see
+    /// `deduplicatedAndSorted`) are removed — e.g. AlAdhan occasionally
+    /// reporting the same holiday twice in one response, or a cache
+    /// written before this dedup step existed. Everything else — "Urs of
+    /// …", "Birth of …"/"Birthday …" and any other personal/regional
+    /// observance AlAdhan happens to report — is dropped here too.
     ///
     /// Both `SharedIslamicCalendarStore` (before every persistent write,
-    /// and self-healing already-persisted data on every read) and
-    /// `IslamicCalendarViewModel` (right after a fresh network fetch, so
-    /// the in-memory `specialDays` driving the UI is never briefly
-    /// unfiltered either) call this — same rule, multiple enforcement
-    /// points, so no call site can accidentally let an irrelevant event
-    /// through by forgetting to filter.
+    /// and self-healing already-persisted data on every read, via
+    /// `loadYearMigratingIfNeeded` below) and `IslamicCalendarViewModel`
+    /// (right after a fresh network fetch, so the in-memory `specialDays`
+    /// driving the UI is never briefly unfiltered/undeduped either) call
+    /// this — same rule, multiple enforcement points, so no call site can
+    /// accidentally let an irrelevant or duplicate event through by
+    /// forgetting to filter.
     static func filterRelevant(_ days: [IslamicSpecialDay], hijriCalendar: Calendar) -> [IslamicSpecialDay] {
-        days.filter { isMajorHoliday($0, hijriCalendar: hijriCalendar) }
+        let relevant = days.filter { isMajorHoliday($0, hijriCalendar: hijriCalendar) }
+        return deduplicatedAndSorted(relevant, hijriCalendar: hijriCalendar)
     }
 
     /// Reads `year` from `store` and — if it still contains any entry that

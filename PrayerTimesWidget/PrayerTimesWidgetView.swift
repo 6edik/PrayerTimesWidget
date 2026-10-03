@@ -9,22 +9,6 @@ struct PrayerTimesWidgetView: View {
     private let store = SharedPrayerTimesStore()
     private let settingsStore = SharedPrayerSettingsStore()
 
-    private struct PrayerMoment {
-        let name: String
-        let time: String
-        let date: Date
-    }
-
-    private typealias PrayerWindow = (
-        currentName: String,
-        currentTime: String,
-        nextName: String,
-        nextTime: String,
-        start: Date,
-        end: Date,
-        progress: Double
-    )
-
     var body: some View {
         Group {
             switch family {
@@ -46,7 +30,7 @@ struct PrayerTimesWidgetView: View {
     }
 
     private var homeSmallView: some View {
-        let window = resolvedPrayerWindow()
+        let window = resolvedWindow()
         let highlights = todaysHighlightState(window: window)
 
         return VStack(alignment: .leading, spacing: 0) {
@@ -179,157 +163,172 @@ struct PrayerTimesWidgetView: View {
     }
 
     private var homeMediumView: some View {
-        let window = resolvedPrayerWindow()
-        let highlights = todaysHighlightState(window: window)
+        let window = resolvedWindow()
 
         return HStack(spacing: 14) {
-            VStack(alignment: .leading, spacing: 10) {
-                HStack(spacing: 0) {
-                    Text(smallGregorianHeader())
-                        .font(.system(size: 11, weight: .semibold, design: .serif))
-                        .kerning(0.4)
-                        .frame(maxWidth: .infinity, alignment: .leading)
+            if let window {
+                let highlights = todaysHighlightState(window: window)
 
-                    Text(smallHijriHeader())
-                        .font(.system(size: 11, weight: .semibold, design: .serif))
-                        .kerning(0.4)
-                        .frame(maxWidth: .infinity, alignment: .trailing)
-                }
-                .foregroundStyle(Color.orange.opacity(0.65))
-                .lineLimit(1)
+                VStack(alignment: .leading, spacing: 10) {
+                    HStack(spacing: 0) {
+                        Text(smallGregorianHeader())
+                            .font(.system(size: 11, weight: .semibold, design: .serif))
+                            .kerning(0.4)
+                            .frame(maxWidth: .infinity, alignment: .leading)
 
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Aktuell")
-                        .font(.system(size: 11, weight: .medium, design: .serif))
-                        .foregroundStyle(Color.white.opacity(0.65))
-
-                    HStack(spacing: 5) {
-                        Text(displayName(for: window.currentName))
-                            .font(.system(size: 15, weight: .semibold, design: .serif))
-                            .foregroundStyle(.white)
-
-                        Text(window.currentTime)
-                            .font(.system(size: 18, weight: .bold, design: .serif))
-                            .monospacedDigit()
-                            .foregroundStyle(.white)
+                        Text(smallHijriHeader())
+                            .font(.system(size: 11, weight: .semibold, design: .serif))
+                            .kerning(0.4)
                             .frame(maxWidth: .infinity, alignment: .trailing)
                     }
-                }
+                    .foregroundStyle(Color.orange.opacity(0.65))
+                    .lineLimit(1)
 
-                VStack(alignment: .leading, spacing: 2) {
-                    HStack(spacing: 0) {
-                        Text("Noch")
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Aktuell")
+                            .font(.system(size: 11, weight: .medium, design: .serif))
+                            .foregroundStyle(Color.white.opacity(0.65))
+
+                        HStack(spacing: 5) {
+                            Text(displayName(for: window.currentName))
+                                .font(.system(size: 15, weight: .semibold, design: .serif))
+                                .foregroundStyle(.white)
+
+                            Text(window.currentTime)
+                                .font(.system(size: 18, weight: .bold, design: .serif))
+                                .monospacedDigit()
+                                .foregroundStyle(.white)
+                                .frame(maxWidth: .infinity, alignment: .trailing)
+                        }
+                    }
+
+                    VStack(alignment: .leading, spacing: 2) {
+                        HStack(spacing: 0) {
+                            Text("Noch")
+                                .font(.system(size: 11, weight: .medium, design: .serif))
+                                .foregroundStyle(Color.white.opacity(0.68))
+
+                            Spacer(minLength: 25)
+
+                            Text(window.end, style: .timer)
+                                .font(.system(size: 18, weight: .bold, design: .serif))
+                                .monospacedDigit()
+                                .foregroundStyle(Color.orange.opacity(0.95))
+                        }
+                        .frame(maxWidth: .infinity)
+
+                        Text("bis \(displayName(for: window.nextName))")
                             .font(.system(size: 11, weight: .medium, design: .serif))
                             .foregroundStyle(Color.white.opacity(0.68))
 
-                        Spacer(minLength: 25)
+                        // A real time-driven control instead of a
+                        // `GeometryReader`/`Capsule` whose width is only
+                        // ever recomputed when WidgetKit swaps in a new
+                        // timeline entry: `ProgressView(timerInterval:)` is
+                        // one of the few WidgetKit-supported views (like
+                        // `Text(_, style: .timer)` above) that the system
+                        // itself keeps animating between entries, so the
+                        // bar actually advances continuously through the
+                        // whole window — not just during whichever single
+                        // window happened to be active the moment the
+                        // timeline was last built.
+                        ProgressView(timerInterval: window.start...window.end, countsDown: false) {
+                            EmptyView()
+                        } currentValueLabel: {
+                            EmptyView()
+                        }
+                        .tint(accent)
+                        .frame(height: 8)
 
-                        Text(window.end, style: .timer)
-                            .font(.system(size: 18, weight: .bold, design: .serif))
-                            .monospacedDigit()
-                            .foregroundStyle(Color.orange.opacity(0.95))
+                        HStack {
+                            Text(displayName(for: window.currentName))
+                            Spacer()
+                            Text(displayName(for: window.nextName))
+                        }
+                        .font(.system(size: 10, weight: .medium, design: .serif))
+                        .foregroundStyle(Color.white.opacity(0.48))
                     }
-                    .frame(maxWidth: .infinity)
 
-                    Text("bis \(displayName(for: window.nextName))")
-                        .font(.system(size: 11, weight: .medium, design: .serif))
-                        .foregroundStyle(Color.white.opacity(0.68))
+                    // Grouped tightly (spacing 3) and separately from the
+                    // block above (spacing 10, inherited from the parent
+                    // VStack): these are two secondary status lines, not
+                    // core timeline info, so when both appear at once they
+                    // should read as one compact cluster instead of each
+                    // claiming a full "row" of vertical space — the
+                    // priority order from lowest to highest space claim is
+                    // current/next prayer, then the timeline, then this
+                    // cluster (letztes Drittel always, Karāha only when
+                    // actually active).
+                    VStack(alignment: .leading, spacing: 3) {
+                        if let lastThird = lastThirdOfNightWindow() {
+                            Text("Letztes Drittel \(clockText(lastThird.start, timezoneIdentifier: lastThird.timezoneIdentifier))–\(clockText(lastThird.end, timezoneIdentifier: lastThird.timezoneIdentifier))")
+                                .font(.system(size: 9, weight: .medium, design: .serif))
+                                .foregroundStyle(Color.white.opacity(0.55))
+                                .lineLimit(1)
+                                .minimumScaleFactor(0.8)
+                        }
 
-                    GeometryReader { geo in
-                        ZStack(alignment: .leading) {
-                            Capsule()
-                                .fill(Color.white.opacity(0.10))
-
-                            Capsule()
-                                .fill(
-                                    LinearGradient(
-                                        colors: [
-                                            Color.orange.opacity(0.95),
-                                            Color.yellow.opacity(0.85)
-                                        ],
-                                        startPoint: .leading,
-                                        endPoint: .trailing
-                                    )
-                                )
-                                .frame(width: max(10, geo.size.width * window.progress))
+                        if let qiratLabel = activeQiratLabel() {
+                            Text(qiratLabel)
+                                .font(.system(size: 9, weight: .semibold, design: .serif))
+                                .foregroundStyle(Color.orange.opacity(0.9))
+                                .lineLimit(1)
+                                .minimumScaleFactor(0.8)
                         }
                     }
-                    .frame(height: 8)
 
-                    HStack {
-                        Text(displayName(for: window.currentName))
-                        Spacer()
-                        Text(displayName(for: window.nextName))
-                    }
-                    .font(.system(size: 10, weight: .medium, design: .serif))
-                    .foregroundStyle(Color.white.opacity(0.48))
+                    Spacer(minLength: 0)
                 }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(14)
 
-                if let lastThird = lastThirdOfNightWindow() {
-                    Text("Letztes Drittel \(clockText(lastThird.start, timezoneIdentifier: lastThird.timezoneIdentifier))–\(clockText(lastThird.end, timezoneIdentifier: lastThird.timezoneIdentifier))")
-                        .font(.system(size: 9, weight: .medium, design: .serif))
-                        .foregroundStyle(Color.white.opacity(0.55))
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.8)
+                VStack(spacing: 7) {
+                    mediumPrayerRow(
+                        title: "Fajr",
+                        time: entry.times.fajr,
+                        isCurrent: highlights.current == "Fajr",
+                        isNext: highlights.next == "Fajr"
+                    )
+
+                    mediumPrayerRow(
+                        title: "Sunrise",
+                        time: entry.times.shuruk,
+                        isCurrent: highlights.current == "Shuruk",
+                        isNext: highlights.next == "Shuruk"
+                    )
+
+                    mediumPrayerRow(
+                        title: dhuhrTitle,
+                        time: entry.times.dhuhr,
+                        isCurrent: highlights.current == "Dhuhr",
+                        isNext: highlights.next == "Dhuhr"
+                    )
+
+                    mediumPrayerRow(
+                        title: "Asr",
+                        time: entry.times.asr,
+                        isCurrent: highlights.current == "Asr",
+                        isNext: highlights.next == "Asr"
+                    )
+
+                    mediumPrayerRow(
+                        title: "Maghrib",
+                        time: entry.times.maghrib,
+                        isCurrent: highlights.current == "Maghrib",
+                        isNext: highlights.next == "Maghrib"
+                    )
+
+                    mediumPrayerRow(
+                        title: "Isha",
+                        time: entry.times.isha,
+                        isCurrent: highlights.current == "Isha",
+                        isNext: highlights.next == "Isha"
+                    )
                 }
-
-                if let qiratLabel = activeQiratLabel() {
-                    Text(qiratLabel)
-                        .font(.system(size: 9, weight: .semibold, design: .serif))
-                        .foregroundStyle(Color.orange.opacity(0.9))
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.8)
-                }
-
-                Spacer(minLength: 0)
+                .frame(width: 120, alignment: .leading)
+            } else {
+                noDataView
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(14)
-
-            VStack(spacing: 7) {
-                mediumPrayerRow(
-                    title: "Fajr",
-                    time: entry.times.fajr,
-                    isCurrent: highlights.current == "Fajr",
-                    isNext: highlights.next == "Fajr"
-                )
-
-                mediumPrayerRow(
-                    title: "Sunrise",
-                    time: entry.times.shuruk,
-                    isCurrent: highlights.current == "Shuruk",
-                    isNext: highlights.next == "Shuruk"
-                )
-
-                mediumPrayerRow(
-                    title: dhuhrTitle,
-                    time: entry.times.dhuhr,
-                    isCurrent: highlights.current == "Dhuhr",
-                    isNext: highlights.next == "Dhuhr"
-                )
-
-                mediumPrayerRow(
-                    title: "Asr",
-                    time: entry.times.asr,
-                    isCurrent: highlights.current == "Asr",
-                    isNext: highlights.next == "Asr"
-                )
-
-                mediumPrayerRow(
-                    title: "Maghrib",
-                    time: entry.times.maghrib,
-                    isCurrent: highlights.current == "Maghrib",
-                    isNext: highlights.next == "Maghrib"
-                )
-
-                mediumPrayerRow(
-                    title: "Isha",
-                    time: entry.times.isha,
-                    isCurrent: highlights.current == "Isha",
-                    isNext: highlights.next == "Isha"
-                )
-            }
-            .frame(width: 120, alignment: .leading)
         }
         .padding()
     }
@@ -368,27 +367,52 @@ struct PrayerTimesWidgetView: View {
         )
     }
 
-    private var lockInlineView: some View {
-        let window = resolvedPrayerWindow()
+    /// Shown instead of a fabricated window whenever `PrayerWindowResolver`
+    /// can't resolve one (missing/unusable cached data for today) — an
+    /// honest empty state rather than a progress bar that looks valid but
+    /// is silently frozen at 0%.
+    private var noDataView: some View {
+        VStack(spacing: 6) {
+            Image(systemName: "exclamationmark.icloud")
+                .font(.system(size: 22))
+                .foregroundStyle(Color.white.opacity(0.55))
 
-        return ViewThatFits(in: .horizontal) {
-            inlineCountdownText(
-                symbol: symbolForPrayer(window.currentName),
-                current: shortLabel(window.currentName),
-                end: window.end,
-                next: shortLabel(window.nextName)
-            )
-
-            inlineCompactCountdownText(
-                symbol: symbolForPrayer(window.currentName),
-                current: shortLabel(window.currentName),
-                end: window.end
-            )
-
-            Text("\(shortLabel(window.currentName)) \(window.currentTime)")
-                .font(.system(.caption2, design: .serif))
-                .monospacedDigit()
+            Text("Keine Gebetszeiten verfügbar")
+                .font(.system(size: 12, weight: .medium, design: .serif))
+                .foregroundStyle(Color.white.opacity(0.55))
+                .multilineTextAlignment(.center)
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    private var lockInlineView: some View {
+        guard let window = resolvedWindow() else {
+            return AnyView(
+                Text("Keine Daten")
+                    .font(.system(.caption2, design: .serif))
+            )
+        }
+
+        return AnyView(
+            ViewThatFits(in: .horizontal) {
+                inlineCountdownText(
+                    symbol: symbolForPrayer(window.currentName),
+                    current: shortLabel(window.currentName),
+                    end: window.end,
+                    next: shortLabel(window.nextName)
+                )
+
+                inlineCompactCountdownText(
+                    symbol: symbolForPrayer(window.currentName),
+                    current: shortLabel(window.currentName),
+                    end: window.end
+                )
+
+                Text("\(shortLabel(window.currentName)) \(window.currentTime)")
+                    .font(.system(.caption2, design: .serif))
+                    .monospacedDigit()
+            }
+        )
     }
 
     private func inlineCountdownText(
@@ -451,45 +475,48 @@ struct PrayerTimesWidgetView: View {
     }
 
     private var lockCircularView: some View {
-        let window = resolvedPrayerWindow()
-
-        return ZStack {
+        ZStack {
             AccessoryWidgetBackground()
 
-            VStack(spacing: 1) {
+            if let window = resolvedWindow() {
                 VStack(spacing: 1) {
-                    Text(shortLabel(window.currentName))
-                        .font(.system(size: 11, weight: .semibold, design: .serif))
-                        .foregroundStyle(accent)
+                    VStack(spacing: 1) {
+                        Text(shortLabel(window.currentName))
+                            .font(.system(size: 11, weight: .semibold, design: .serif))
+                            .foregroundStyle(accent)
 
-                    Text(window.currentTime)
-                        .font(.system(size: 14, weight: .bold, design: .serif))
-                        .monospacedDigit()
+                        Text(window.currentTime)
+                            .font(.system(size: 14, weight: .bold, design: .serif))
+                            .monospacedDigit()
+                    }
+
+                    Rectangle()
+                        .fill(Color.white.opacity(0.18))
+                        .frame(width: 38, height: 1)
+
+                    HStack(spacing: 2) {
+                        Text(shortLabel(window.nextName))
+                            .font(.system(size: 7, weight: .semibold, design: .serif))
+                            .foregroundStyle(accent)
+
+                        Text(window.nextTime)
+                            .font(.system(size: 8, weight: .bold, design: .serif))
+                            .monospacedDigit()
+                    }
                 }
-
-                Rectangle()
-                    .fill(Color.white.opacity(0.18))
-                    .frame(width: 38, height: 1)
-
-                HStack(spacing: 2) {
-                    Text(shortLabel(window.nextName))
-                        .font(.system(size: 7, weight: .semibold, design: .serif))
-                        .foregroundStyle(accent)
-
-                    Text(window.nextTime)
-                        .font(.system(size: 8, weight: .bold, design: .serif))
-                        .monospacedDigit()
-                }
+            } else {
+                Text("--:--")
+                    .font(.system(size: 13, weight: .semibold, design: .serif))
             }
         }
     }
 
     private var lockRectangularView: some View {
-        let window = resolvedPrayerWindow()
+        let window = resolvedWindow()
 
         return VStack(alignment: .leading, spacing: 2) {
             HStack(alignment: .center) {
-                Text("\(displayName(for: window.currentName)) \(window.currentTime)")
+                Text(window.map { "\(displayName(for: $0.currentName)) \($0.currentTime)" } ?? "Keine Daten")
                     .font(.system(size: 18, weight: .light, design: .serif))
                     .lineLimit(1)
                     .minimumScaleFactor(0.75)
@@ -598,109 +625,38 @@ struct PrayerTimesWidgetView: View {
         return formatter.string(from: date)
     }
 
-    private func resolvedPrayerWindow() -> PrayerWindow {
-        let now = entry.date
-        let calendar = Calendar.current
-        let autoSettings = settingsStore.loadAutoSettings()
-
-        let yesterday = calendar.date(byAdding: .day, value: -1, to: now) ?? now
-        let tomorrow = calendar.date(byAdding: .day, value: 1, to: now) ?? now
-
-        // entry.previousDayTimes already has the stored adjustments (and
-        // their day offsets) applied by the widget provider. Only fall back
-        // to a fresh cache lookup (and apply the adjustments ourselves) if
-        // the provider didn't have a cached previous day at all.
-        let yesterdayAdjusted: AdjustedPrayerTimes? = entry.previousDayTimes.map {
+    /// Resolves the current/next prayer window for `entry.date` purely from
+    /// data already carried on the entry (`times`/`previousDayTimes`/
+    /// `nextDayTimes`, all baked in once by the `Provider` when the entry
+    /// was built) — no extra App-Group read from inside the view layer, and
+    /// the exact same `PrayerWindowResolver` every widget family uses, so
+    /// they can never disagree. `nil` means there genuinely isn't enough
+    /// cached data to resolve a window — callers must show an honest empty
+    /// state, never a fabricated one.
+    private func resolvedWindow() -> PrayerWindowResolver.Window? {
+        let todayAdjusted = AdjustedPrayerTimes(times: entry.times, dayOffsets: entry.dayOffsets)
+        let previousAdjusted = entry.previousDayTimes.map {
             AdjustedPrayerTimes(times: $0, dayOffsets: entry.previousDayOffsets)
-        } ?? store.load(for: yesterday, settings: autoSettings)?
-            .applyingAdjustmentsWithDayOffsets(autoSettings.adjustments)
-
-        let tomorrowAdjusted = store.load(for: tomorrow, settings: autoSettings)?
-            .applyingAdjustmentsWithDayOffsets(autoSettings.adjustments)
-
-        var moments: [PrayerMoment] = []
-
-        if let yesterdayAdjusted,
-           let yesterdayIshaDate = PrayerTimeAdjuster.date(
-               forAdjusted: .init(value: yesterdayAdjusted.times.isha, dayOffset: yesterdayAdjusted.dayOffsets.isha),
-               base: yesterday,
-               calendar: calendar
-           ) {
-            moments.append(.init(name: "Isha", time: yesterdayAdjusted.times.isha, date: yesterdayIshaDate))
+        }
+        let nextAdjusted = entry.nextDayTimes.map {
+            AdjustedPrayerTimes(times: $0, dayOffsets: entry.nextDayOffsets)
         }
 
-        let todayMoments: [(name: String, time: String, dayOffset: Int)] = [
-            ("Fajr", entry.times.fajr, entry.dayOffsets.fajr),
-            ("Shuruk", entry.times.shuruk, entry.dayOffsets.shuruk),
-            ("Dhuhr", entry.times.dhuhr, entry.dayOffsets.dhuhr),
-            ("Asr", entry.times.asr, entry.dayOffsets.asr),
-            ("Maghrib", entry.times.maghrib, entry.dayOffsets.maghrib),
-            ("Isha", entry.times.isha, entry.dayOffsets.isha)
-        ]
-
-        for item in todayMoments {
-            if let date = PrayerTimeAdjuster.date(
-                forAdjusted: .init(value: item.time, dayOffset: item.dayOffset),
-                base: now,
-                calendar: calendar
-            ) {
-                moments.append(.init(name: item.name, time: item.time, date: date))
-            }
-        }
-
-        let tomorrowFajrTime = tomorrowAdjusted?.times.fajr ?? entry.times.fajr
-        let tomorrowFajrOffset = tomorrowAdjusted?.dayOffsets.fajr ?? 0
-
-        if let tomorrowFajrDate = PrayerTimeAdjuster.date(
-            forAdjusted: .init(value: tomorrowFajrTime, dayOffset: tomorrowFajrOffset),
-            base: tomorrow,
-            calendar: calendar
-        ) {
-            moments.append(.init(name: "Fajr", time: tomorrowFajrTime, date: tomorrowFajrDate))
-        }
-
-        moments.sort { $0.date < $1.date }
-
-        guard !moments.isEmpty else {
-            let fallbackStart = now
-            let fallbackEnd = now.addingTimeInterval(60 * 60)
-            return (
-                currentName: "Fajr",
-                currentTime: entry.times.fajr,
-                nextName: "Dhuhr",
-                nextTime: entry.times.dhuhr,
-                // Note: this fallback window's `nextName` is the internal
-                // "Dhuhr" key, translated to a display label by
-                // `displayName(for:)` wherever it's rendered — never shown
-                // as this literal string directly.
-                start: fallbackStart,
-                end: fallbackEnd,
-                progress: progressValue(now: now, start: fallbackStart, end: fallbackEnd)
-            )
-        }
-
-        let currentIndex = max(moments.lastIndex(where: { $0.date <= now }) ?? 0, 0)
-        let current = moments[currentIndex]
-        let next = moments[min(currentIndex + 1, moments.count - 1)]
-
-        let safeEnd = next.date > current.date ? next.date : current.date.addingTimeInterval(60 * 60)
-
-        return (
-            currentName: current.name,
-            currentTime: current.time,
-            nextName: next.name,
-            nextTime: next.time,
-            start: current.date,
-            end: safeEnd,
-            progress: progressValue(now: now, start: current.date, end: safeEnd)
+        return PrayerWindowResolver.resolve(
+            now: entry.date,
+            todayTimes: todayAdjusted,
+            previousDayTimes: previousAdjusted,
+            nextDayTimes: nextAdjusted
         )
     }
 
-    private func todaysHighlightState(window: PrayerWindow) -> (
+    private func todaysHighlightState(window: PrayerWindowResolver.Window?) -> (
         current: String?,
         next: String?,
         primary: String?
     ) {
+        guard let window else { return (nil, nil, nil) }
+
         let calendar = Calendar.current
 
         let currentToday = calendar.isDate(window.start, inSameDayAs: entry.date) ? window.currentName : nil
@@ -712,14 +668,6 @@ struct PrayerTimesWidgetView: View {
             next: nextToday,
             primary: primary
         )
-    }
-
-    private func progressValue(now: Date, start: Date, end: Date) -> Double {
-        let total = end.timeIntervalSince(start)
-        guard total > 0 else { return 0 }
-
-        let elapsed = now.timeIntervalSince(start)
-        return min(max(elapsed / total, 0), 1)
     }
 
     private func shortLabel(_ value: String) -> String {
@@ -743,11 +691,12 @@ struct PrayerTimesWidgetView: View {
     }
 
     /// Every "Dhuhr" moment reaching `displayName`/`shortLabel` here is
-    /// always *today's* Dhuhr (traced through `resolvedPrayerWindow()`:
-    /// only today's own moments carry the "Dhuhr" name — yesterday only
-    /// contributes Isha, tomorrow only Fajr), so `entry.date` is always the
-    /// correct calendar day for the Friday/Jum'ah check, in the location's
-    /// own timezone via `entry.times.timezone`.
+    /// always *today's* Dhuhr (traced through `resolvedWindow()`/
+    /// `PrayerWindowResolver`: only today's own moments carry the "Dhuhr"
+    /// name — yesterday only contributes Isha, tomorrow only Fajr), so
+    /// `entry.date` is always the correct calendar day for the
+    /// Friday/Jum'ah check, in the location's own timezone via
+    /// `entry.times.timezone`.
     private var dhuhrTitle: String {
         PrayerDisplayNaming.dhuhrLabel(date: entry.date, timezoneIdentifier: entry.times.timezone)
     }
@@ -775,4 +724,52 @@ extension View {
             self.background(Color.black.opacity(0.92))
         }
     }
+}
+
+private func previewEntry() -> PrayerEntry {
+    let today = PrayerTimes(
+        fajr: "05:30", shuruk: "07:00", dhuhr: "12:15", asr: "14:45",
+        maghrib: "17:15", isha: "18:45",
+        readableDate: "2 Jan 2026", readableDay: "Friday",
+        hijriDate: "--", hijriDay: "--", timezone: "Europe/Berlin"
+    )
+    return PrayerEntry(
+        date: Date(),
+        times: today,
+        dayOffsets: .zero,
+        previousDayTimes: today,
+        previousDayOffsets: .zero,
+        nextDayTimes: today,
+        nextDayOffsets: .zero
+    )
+}
+
+#Preview("Small", as: .systemSmall) {
+    PrayerTimesWidgetStructure()
+} timeline: {
+    previewEntry()
+}
+
+#Preview("Medium", as: .systemMedium) {
+    PrayerTimesWidgetStructure()
+} timeline: {
+    previewEntry()
+}
+
+#Preview("Lock Inline", as: .accessoryInline) {
+    PrayerTimesWidgetStructure()
+} timeline: {
+    previewEntry()
+}
+
+#Preview("Lock Circular", as: .accessoryCircular) {
+    PrayerTimesWidgetStructure()
+} timeline: {
+    previewEntry()
+}
+
+#Preview("Lock Rectangular", as: .accessoryRectangular) {
+    PrayerTimesWidgetStructure()
+} timeline: {
+    previewEntry()
 }

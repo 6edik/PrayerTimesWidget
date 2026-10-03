@@ -29,9 +29,9 @@ nonisolated enum PrayerDisplayNaming {
         isJumuahDhuhr(date: date, timezoneIdentifier: timezoneIdentifier) ? "JUM" : "DHR"
     }
 
-    /// Short, honest caption shown only next to a "Jum'ah"-labeled row: the
-    /// displayed time is still just the calculated Dhuhr time, never a
-    /// specific mosque's actual Khutba/Jum'ah start time.
-    static let khutbaClarificationCaption =
-        "Berechnete Dhuhr-Zeit — nicht die Khutba-/Jum'ah-Zeit einer bestimmten Moschee."
+    /// Shown only next to a "Jum'ah"-labeled row, exactly this one line —
+    /// no further clarification or parenthetical. The displayed value is
+    /// still just the calculated Dhuhr time; the time/calculation itself
+    /// is unaffected by this label.
+    static let khutbaClarificationCaption = "Berechnete Dhuhr Zeit"
 }

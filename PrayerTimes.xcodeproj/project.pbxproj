@@ -93,6 +93,7 @@
 				Shared/PrayerSettings.swift,
 				Shared/PrayerTimes.swift,
 				Shared/PrayerTimesMapper.swift,
+				Shared/PrayerWindowResolver.swift,
 				Shared/QiratTimeCalculator.swift,
 				Shared/QiratTimeResolver.swift,
 				Shared/RefreshStats.swift,
@@ -564,7 +565,7 @@
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = PrayerTimesMain/Info.plist;
-				INFOPLIST_KEY_CFBundleDisplayName = "Authentic PT";
+				INFOPLIST_KEY_CFBundleDisplayName = Salah;
 				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "Dein Standort wird verwendet, um die Gebetsrichtung (Qibla) und lokale Gebetszeiten präzise zu berechnen.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
@@ -600,7 +601,7 @@
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = PrayerTimesMain/Info.plist;
-				INFOPLIST_KEY_CFBundleDisplayName = "Authentic PT";
+				INFOPLIST_KEY_CFBundleDisplayName = Salah;
 				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "Dein Standort wird verwendet, um die Gebetsrichtung (Qibla) und lokale Gebetszeiten präzise zu berechnen.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
@@ -635,6 +636,7 @@
 				DEVELOPMENT_TEAM = QQAS9WV7AD;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = PrayerTimesWidget/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = Salah;
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -665,6 +667,7 @@
 				DEVELOPMENT_TEAM = QQAS9WV7AD;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = PrayerTimesWidget/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = Salah;
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",

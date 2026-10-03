@@ -11,4 +11,10 @@ struct PrayerEntry: TimelineEntry {
     let dayOffsets: PrayerDayOffsets
     let previousDayTimes: PrayerTimes?
     let previousDayOffsets: PrayerDayOffsets
+    // Baked in by the provider at entry-build time (same cache read it
+    // already does for `previousDayTimes`) so `PrayerWindowResolver` never
+    // needs a second, redundant App-Group read from inside the view layer
+    // just to find tomorrow's Fajr.
+    let nextDayTimes: PrayerTimes?
+    let nextDayOffsets: PrayerDayOffsets
 }

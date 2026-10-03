@@ -1,6 +1,6 @@
 import Foundation
 
-struct AutoPrayerSettings: Codable, Equatable {
+nonisolated struct AutoPrayerSettings: Codable, Equatable {
     var address: String = "Gelsenkirchen, DE"
     // Optional so settings saved before this field existed still decode
     // (via the compiler-synthesized `decodeIfPresent`) instead of falling

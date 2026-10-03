@@ -1,20 +1,22 @@
 import SwiftUI
 
-/// Shared row layout for a single personal note or Zakat-due-date entry —
-/// used both inside the day sheet (where the date is already shown by the
-/// sheet header, so `showsDate` is `false`) and in the "Meine Notizen"
-/// overview (where it is `true`, since entries from many different days
-/// are listed together).
+/// Shared row layout for a single personal note — used both inside the day
+/// sheet (where the date is already shown by the sheet header, so
+/// `showsDate` is `false`) and in the "Meine Notizen" overview (where it is
+/// `true`, since entries from many different days are listed together).
+///
+/// `isCompact` shows only the note's first paragraph (up to the first
+/// line break), truncated to one line, instead of the full text — used
+/// everywhere a row sits in a list of several notes (the day sheet, the
+/// "Meine Notizen" overview), so a long, multi-paragraph note can never
+/// balloon that list; tapping the row is how you get to the full text.
 struct PersonalCalendarEntryRow: View {
     let entry: PersonalCalendarEntry
     var showsDate: Bool = true
-
-    private let hijriCalendar = HijriDateFormatting.calendar()
+    var isCompact: Bool = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            zakatBadge
-
             if showsDate {
                 let text = dateText
                 if !text.isEmpty {
@@ -24,10 +26,12 @@ struct PersonalCalendarEntryRow: View {
                 }
             }
 
-            Text(entry.note)
+            Text(previewText)
                 .font(.body)
                 .foregroundStyle(.primary)
-                .fixedSize(horizontal: false, vertical: true)
+                .lineLimit(isCompact ? 1 : nil)
+                .truncationMode(.tail)
+                .fixedSize(horizontal: false, vertical: !isCompact)
         }
         .padding()
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -38,44 +42,19 @@ struct PersonalCalendarEntryRow: View {
         .accessibilityLabel(accessibilityText)
     }
 
-    // Subtle, deliberately not orange (AlAdhan-holiday) or blue
-    // (Sunnah-fasting) — just a small secondary-colored tag so a Zakat
-    // entry reads differently from a plain note. Shows the fixed Hijri
-    // rule itself (e.g. "jedes Hijri-Jahr am 27. Ramadan"), never a single
-    // Gregorian date, since that's what actually recurs — shown wherever
-    // this row appears, not just in the overview, so the rule is visible
-    // regardless of `showsDate`.
-    @ViewBuilder
-    private var zakatBadge: some View {
-        if let day = entry.hijriDay, let month = entry.hijriMonth {
-            HStack(spacing: 4) {
-                Label("Zakat-Stichtag", systemImage: "banknote")
-                    .font(.caption2.weight(.semibold))
-                    .foregroundStyle(.secondary)
-                Text("· jedes Hijri-Jahr am \(day). \(HijriDateFormatting.monthName(month))")
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-            }
+    /// Only the note's first paragraph when `isCompact` — everything up
+    /// to (not including) the first line break. A note without any line
+    /// break is already just one paragraph, so this is a no-op for it.
+    private var previewText: String {
+        guard isCompact, let firstBreak = entry.note.firstIndex(of: "\n") else {
+            return entry.note
         }
+        return String(entry.note[entry.note.startIndex..<firstBreak])
     }
 
-    // For a note: the plain Gregorian day. For a Zakat entry: the current
-    // representative occurrence, Gregorian *and* Hijri shown together
-    // (spec item 7) — a computed Umm-al-Qura mapping, not a claim of
-    // religious certainty.
     private var dateText: String {
-        switch entry.kind {
-        case .note:
-            guard let iso = entry.isoDate, let date = PersonalCalendarViewModel.date(from: iso) else { return "" }
-            return formattedGregorian(date)
-
-        case .zakatDueDate:
-            guard
-                let day = entry.hijriDay, let month = entry.hijriMonth,
-                let occurrence = ZakatOccurrenceCalculator.nextOccurrence(hijriDay: day, hijriMonth: month, hijriCalendar: hijriCalendar)
-            else { return "" }
-            return "\(formattedGregorian(occurrence)) · \(HijriDateFormatting.displayText(for: occurrence))"
-        }
+        guard let iso = entry.isoDate, let date = PersonalCalendarViewModel.date(from: iso) else { return "" }
+        return formattedGregorian(date)
     }
 
     private func formattedGregorian(_ date: Date) -> String {
@@ -87,10 +66,6 @@ struct PersonalCalendarEntryRow: View {
 
     private var accessibilityText: String {
         var parts: [String] = []
-
-        if let day = entry.hijriDay, let month = entry.hijriMonth {
-            parts.append("Zakat-Stichtag, jedes Hijri-Jahr am \(day). \(HijriDateFormatting.monthName(month))")
-        }
 
         if showsDate {
             let text = dateText

@@ -1,74 +1,20 @@
 import SwiftUI
 
 struct IslamicCalendarHadithSheet: View {
-    @Environment(\.dismiss) private var dismiss
     let items: [FastingHadithItem]
 
-    private let accentGradient = LinearGradient(
-        colors: [Color(red: 0.78, green: 0.58, blue: 0.20), Color.orange.opacity(0.92)],
-        startPoint: .top,
-        endPoint: .bottom
-    )
-
     var body: some View {
-        NavigationStack {
-            ScrollView {
-                LazyVStack(spacing: 16) {
-                    introCard
+        IslamicCalendarPageContainer(title: "Ahadith zum Fasten") {
+            IslamicCalendarHeroCard(
+                symbol: "book.closed",
+                title: "Überlieferungen zum freiwilligen Fasten",
+                subtitle: "Eine kompakte Übersicht zu empfohlenen Fasttagen und besonderen Zeiten."
+            )
 
-                    ForEach(items) { item in
-                        hadithCard(item)
-                    }
-                }
-                .padding(.horizontal, 16)
-                .padding(.top, 8)
-                .padding(.bottom, 12)
-            }
-            .background(Color("AppBackground").ignoresSafeArea())
-            .navigationTitle("Ahadith zum Fasten")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button { dismiss() } label: {
-                        ZStack {
-                            Image(systemName: "xmark")
-                                .font(.system(size: 12, weight: .bold))
-                                .foregroundStyle(.primary)
-                        }
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel("Schließen")
-                }
+            ForEach(items) { item in
+                hadithCard(item)
             }
         }
-    }
-
-    private var introCard: some View {
-        VStack(spacing: 12) {
-            ZStack {
-                Circle()
-                    .fill(Color.orange.opacity(0.10))
-                    .frame(width: 56, height: 56)
-
-                Image(systemName: "book.closed")
-                    .font(.system(size: 20, weight: .semibold))
-                    .foregroundStyle(accentGradient)
-            }
-
-            VStack(spacing: 6) {
-                Text("Überlieferungen zum freiwilligen Fasten")
-                    .font(.title3.weight(.semibold))
-                    .multilineTextAlignment(.center)
-
-                Text("Eine kompakte Übersicht zu empfohlenen Fasttagen und besonderen Zeiten.")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-                    .multilineTextAlignment(.center)
-            }
-        }
-        .frame(maxWidth: .infinity)
-        .padding(20)
-        .glassCard(cornerRadius: 22)
     }
 
     private func hadithCard(_ item: FastingHadithItem) -> some View {

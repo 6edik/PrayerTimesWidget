@@ -32,6 +32,13 @@ struct PrayerTimesHomeView: View {
     @State private var activeSheet: ActiveSheet?
     @State private var hasLoadedInitially = false
     @State private var lastThirdWindow: LastThirdOfNightResolver.ResolvedWindow?
+    // Collapsed by default — "Letztes Drittel der Nacht" is never shown
+    // permanently; tapping the Isha tile reveals it, tapping again hides
+    // it. Always reflects the current `lastThirdWindow` (recomputed by
+    // `applyCachedTimes` on every load/refresh), so a day change or a
+    // fresh fetch while this is open updates the same values in place —
+    // no separate computation here, no separate API call.
+    @State private var showLastThirdDetail = false
 
     enum ActiveSheet: Identifiable {
         case settings
@@ -107,18 +114,38 @@ struct PrayerTimesHomeView: View {
                     .foregroundStyle(.secondary)
 
                 ForEach(PrayerTimesMapper.rows(from: prayerTimes)) { row in
+                    let isIsha = row.name == "Isha"
+
                     VStack(alignment: .leading, spacing: 4) {
-                        HStack {
-                            Text(row.name)
-                            Spacer()
-                            Text(row.time)
-                                .fontWeight(.semibold)
+                        Group {
+                            if isIsha {
+                                Button {
+                                    withAnimation(.spring(response: 0.45, dampingFraction: 0.82)) {
+                                        showLastThirdDetail.toggle()
+                                    }
+                                } label: {
+                                    ishaTileLabel(row)
+                                }
+                                .buttonStyle(.plain)
+                                .accessibilityHint(showLastThirdDetail ? "Letztes Drittel der Nacht ausblenden" : "Letztes Drittel der Nacht anzeigen")
+                            } else {
+                                HStack {
+                                    Text(row.name)
+                                    Spacer()
+                                    Text(row.time)
+                                        .fontWeight(.semibold)
+                                }
+                            }
                         }
 
                         if row.name == "Jum'ah" {
                             Text(PrayerDisplayNaming.khutbaClarificationCaption)
                                 .font(.caption2)
                                 .foregroundStyle(.secondary)
+                        }
+
+                        if isIsha, showLastThirdDetail, let lastThirdWindow {
+                            lastThirdDetail(lastThirdWindow)
                         }
                     }
                     .padding()
@@ -140,18 +167,6 @@ struct PrayerTimesHomeView: View {
                             )
                     }
                     .shadow(color: .black.opacity(0.16), radius: 16, y: 8)
-                }
-
-                if let lastThirdWindow {
-                    HStack {
-                        Text("Letztes Drittel der Nacht")
-                        Spacer()
-                        Text("\(clockText(lastThirdWindow.start, timezoneIdentifier: lastThirdWindow.timezoneIdentifier)) – \(clockText(lastThirdWindow.end, timezoneIdentifier: lastThirdWindow.timezoneIdentifier))")
-                            .fontWeight(.semibold)
-                    }
-                    .padding()
-                    .background(.thinMaterial)
-                    .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
                 }
 
                 if isLoading {
@@ -324,5 +339,52 @@ struct PrayerTimesHomeView: View {
         formatter.timeZone = TimeZone(identifier: timezoneIdentifier) ?? .current
         formatter.dateFormat = "HH:mm"
         return formatter.string(from: date)
+    }
+
+    /// Same row layout every other prayer tile uses, plus a chevron that
+    /// signals the Isha tile itself is tappable (to reveal/hide the
+    /// last-third-of-the-night detail below) — the tile's own name/time
+    /// display and its row identity never change.
+    private func ishaTileLabel(_ row: PrayerRow) -> some View {
+        HStack {
+            Text(row.name)
+            Spacer()
+            Image(systemName: "chevron.down")
+                .font(.caption2.weight(.semibold))
+                .foregroundStyle(.secondary)
+                .rotationEffect(.degrees(showLastThirdDetail ? 180 : 0))
+            Text(row.time)
+                .fontWeight(.semibold)
+        }
+        .contentShape(Rectangle())
+    }
+
+    /// Compact, subdued detail revealed under the Isha tile — reuses the
+    /// already-resolved `lastThirdWindow` as-is (no second calculation, no
+    /// extra network request); a neutral secondary tint, never the app's
+    /// warning/orange color, since this isn't an alert.
+    private func lastThirdDetail(_ window: LastThirdOfNightResolver.ResolvedWindow) -> some View {
+        HStack {
+            Text("Letztes Drittel der Nacht")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+            Spacer()
+            Text("\(clockText(window.start, timezoneIdentifier: window.timezoneIdentifier)) – \(clockText(window.end, timezoneIdentifier: window.timezoneIdentifier))")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 10)
+        .frame(maxWidth: .infinity)
+        .background(Color.secondary.opacity(0.08))
+        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .transition(
+            .asymmetric(
+                insertion: .scale(scale: 0.92, anchor: .top)
+                    .combined(with: .move(edge: .top))
+                    .combined(with: .opacity),
+                removal: .opacity.combined(with: .move(edge: .top))
+            )
+        )
     }
 }

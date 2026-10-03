@@ -7,6 +7,12 @@ struct NotificationSettingsView: View {
 
     @State private var settings = NotificationSettingsStore().load()
     private let store = NotificationSettingsStore()
+    // Only shown once a Zakat-Stichtag is actually set up and active on
+    // "Besondere Tage" (`IslamicHolidayOverviewSheet`) — this page never
+    // lets you create or edit that entry itself, only configure whether
+    // to be reminded about it.
+    @State private var zakatDueDate: ZakatDueDate? = ZakatDueDateStore().load()
+    @State private var showInfoSheet = false
 
     var body: some View {
         NavigationStack {
@@ -22,32 +28,12 @@ struct NotificationSettingsView: View {
 
                 Section("Gebete") {
                     ForEach(PrayerNotificationKind.allCases) { kind in
-                        NavigationLink {
-                            PrayerNotificationDetailView(kind: kind, setting: bindingForPrayer(kind))
-                        } label: {
-                            HStack {
-                                Text(kind.displayName)
-                                Spacer()
-                                Text(summaryText(for: settings.setting(for: kind)))
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                            }
-                        }
+                        Toggle(kind.displayName, isOn: bindingForPrayer(kind).isEnabled)
                     }
                 }
 
                 Section("Karāha") {
-                    NavigationLink {
-                        QiratNotificationDetailView(setting: bindingForQirat())
-                    } label: {
-                        HStack {
-                            Text("Sonnenaufgang & vor Maghrib (Näherung)")
-                            Spacer()
-                            Text(summaryText(for: settings.qirat))
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
-                    }
+                    Toggle("Sonnenaufgang & vor Maghrib (Näherung)", isOn: bindingForQirat().isEnabled)
                 }
 
                 Section("Freiwilliges Fasten") {
@@ -57,23 +43,23 @@ struct NotificationSettingsView: View {
                         HStack {
                             Text("Montag, Donnerstag & Weiße Tage")
                             Spacer()
-                            Text(summaryText(for: settings.voluntaryFasting))
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
+                            Toggle("", isOn: voluntaryFastingEnabledBinding)
+                                .labelsHidden()
                         }
                     }
                 }
 
-                Section("Zakat") {
-                    NavigationLink {
-                        ZakatNotificationDetailView(setting: bindingForZakat())
-                    } label: {
-                        HStack {
-                            Text("An Zakat-Stichtage erinnern")
-                            Spacer()
-                            Text(summaryText(for: settings.zakat))
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
+                if zakatDueDate?.isEnabled == true {
+                    Section("Zakat") {
+                        NavigationLink {
+                            ZakatNotificationDetailView(setting: bindingForZakat())
+                        } label: {
+                            HStack {
+                                Text("An Zakat-Stichtage erinnern")
+                                Spacer()
+                                Toggle("", isOn: bindingForZakat().isEnabled)
+                                    .labelsHidden()
+                            }
                         }
                     }
                 }
@@ -86,18 +72,11 @@ struct NotificationSettingsView: View {
                             HStack {
                                 Text(holiday.displayName)
                                 Spacer()
-                                Text(summaryText(for: settings.setting(for: holiday)))
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
+                                Toggle("", isOn: bindingForHoliday(holiday).isEnabled)
+                                    .labelsHidden()
                             }
                         }
                     }
-                }
-
-                Section("Hinweis") {
-                    Text("Benachrichtigungen umgehen keinen Stummmodus und keinen Fokus – sie folgen den iOS-Systemeinstellungen wie jede andere App.")
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
                 }
             }
             .scrollContentBackground(.hidden)
@@ -106,9 +85,23 @@ struct NotificationSettingsView: View {
                 ToolbarItem(placement: .topBarLeading) {
                     Button("Schließen") { dismiss() }
                 }
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button {
+                        showInfoSheet = true
+                    } label: {
+                        Image(systemName: "info.circle")
+                    }
+                    .accessibilityLabel("Hinweise")
+                }
+            }
+            .sheet(isPresented: $showInfoSheet) {
+                NotificationInfoSheet()
             }
             .task {
                 await permissionManager.refreshStatus()
+            }
+            .onAppear {
+                zakatDueDate = ZakatDueDateStore().load()
             }
         }
     }
@@ -148,6 +141,25 @@ struct NotificationSettingsView: View {
                 if newValue.isEnabled, !wasEnabled {
                     Task { await requestPermissionIfNeeded() }
                 }
+            }
+        )
+    }
+
+    // A single convenience switch for the main list row: off clears every
+    // occasion, and turning it on from fully-off enables all three — there
+    // is no single underlying `isEnabled` field to bind to directly, since
+    // the three occasions (Montag/Donnerstag/Weiße Tage) are independent.
+    // The detail view's own three toggles remain the precise way to
+    // configure which occasions are actually enabled.
+    private var voluntaryFastingEnabledBinding: Binding<Bool> {
+        Binding(
+            get: { settings.voluntaryFasting.hasAnyEnabled },
+            set: { newValue in
+                var updated = settings.voluntaryFasting
+                updated.monday = newValue
+                updated.thursday = newValue
+                updated.whiteDays = newValue
+                bindingForVoluntaryFasting().wrappedValue = updated
             }
         )
     }
@@ -228,75 +240,6 @@ struct NotificationSettingsView: View {
         store.save(settings)
         Task { await NotificationScheduler().reschedule() }
     }
-
-    private func summaryText(for setting: PrayerNotificationSetting) -> String {
-        guard setting.isEnabled else { return "Aus" }
-        return setting.reminderLeadTime == .none ? "An" : "An · \(setting.reminderLeadTime.rawValue) Min. vorher"
-    }
-
-    private func summaryText(for setting: VoluntaryFastingNotificationSetting) -> String {
-        guard setting.hasAnyEnabled else { return "Aus" }
-
-        var parts: [String] = []
-        if setting.monday { parts.append("Mo") }
-        if setting.thursday { parts.append("Do") }
-        if setting.whiteDays { parts.append("Weiße Tage") }
-        return parts.joined(separator: " · ")
-    }
-
-    private func summaryText(for setting: HolidayNotificationSetting) -> String {
-        guard setting.isEnabled, !setting.isConfigurationUseless else { return "Aus" }
-
-        var parts: [String] = []
-        if setting.notifyDayBefore { parts.append("Vortag") }
-        if setting.notifyOnDay { parts.append("Am Tag") }
-        return parts.joined(separator: " & ")
-    }
-
-    private func summaryText(for setting: ZakatNotificationSetting) -> String {
-        guard setting.isEnabled else { return "Aus" }
-        return setting.notifyDayBefore ? "An · Vortag & am Tag" : "An · Am Tag"
-    }
-
-    private func summaryText(for setting: QiratTimesNotificationSetting) -> String {
-        setting.isEnabled ? "An" : "Aus"
-    }
-}
-
-private struct PrayerNotificationDetailView: View {
-    let kind: PrayerNotificationKind
-    @Binding var setting: PrayerNotificationSetting
-
-    var body: some View {
-        Form {
-            Section {
-                Toggle("Benachrichtigung für \(kind.displayName)", isOn: $setting.isEnabled)
-            }
-
-            if setting.isEnabled {
-                Section("Zusätzliche Erinnerung") {
-                    Picker("Erinnerung", selection: $setting.reminderLeadTime) {
-                        ForEach(ReminderLeadTime.allCases) { lead in
-                            Text(lead.title).tag(lead)
-                        }
-                    }
-                }
-
-                Section("Ton") {
-                    Picker("Ton", selection: $setting.sound) {
-                        ForEach(NotificationSoundOption.allCases) { option in
-                            Text(option.title).tag(option)
-                        }
-                    }
-                    .pickerStyle(.segmented)
-                }
-            }
-        }
-        .scrollContentBackground(.hidden)
-        .background(Color("AppBackground").ignoresSafeArea())
-        .navigationTitle(kind.displayName)
-        .navigationBarTitleDisplayMode(.inline)
-    }
 }
 
 private struct VoluntaryFastingNotificationDetailView: View {
@@ -322,24 +265,7 @@ private struct VoluntaryFastingNotificationDetailView: View {
                         }
                     }
                 }
-
-                Section("Ton") {
-                    Picker("Ton", selection: $setting.sound) {
-                        ForEach(NotificationSoundOption.allCases) { option in
-                            Text(option.title).tag(option)
-                        }
-                    }
-                    .pickerStyle(.segmented)
-                }
             }
-
-            Section("Hinweis") {
-                Text("Die Erinnerung wird am Vorabend des Fastentags nach Maghrib geplant – für einen Montag also nach Maghrib am Sonntag, nicht am Montag selbst.")
-                Text("Während des Ramadan sowie an Eid al-Fitr, Eid al-Adha und den drei Tagen von Tashriq danach wird keine Erinnerung für freiwilliges Fasten geplant.")
-                Text("Fehlen für den Fastentag selbst gültige Fajr- oder Maghrib-Zeiten, wird die Erinnerung ohne Dauerangabe geplant statt eine Dauer zu schätzen.")
-            }
-            .font(.caption)
-            .foregroundStyle(.secondary)
         }
         .scrollContentBackground(.hidden)
         .background(Color("AppBackground").ignoresSafeArea())
@@ -370,10 +296,6 @@ private struct HolidayNotificationDetailView: View {
 
     var body: some View {
         Form {
-            Section {
-                Toggle("Benachrichtigung für \(holiday.displayName)", isOn: $setting.isEnabled)
-            }
-
             if setting.isEnabled {
                 Section("Zeitpunkt") {
                     Toggle("Am Vortag erinnern", isOn: $setting.notifyDayBefore)
@@ -421,12 +343,6 @@ private struct ZakatNotificationDetailView: View {
 
     var body: some View {
         Form {
-            Section {
-                Toggle("An Zakat-Stichtage erinnern", isOn: $setting.isEnabled)
-            } footer: {
-                Text("Gilt für alle Kalendereinträge, die du als Zakat-Stichtag markiert hast. Ist dieser Schalter aus, bleiben die Einträge im Kalender sichtbar, aber es wird keine Erinnerung geplant.")
-            }
-
             if setting.isEnabled {
                 Section("Zeitpunkt") {
                     Toggle("Zusätzlich am Vortag erinnern", isOn: $setting.notifyDayBefore)
@@ -436,13 +352,6 @@ private struct ZakatNotificationDetailView: View {
                     DatePicker("Uhrzeit", selection: timeBinding, displayedComponents: .hourAndMinute)
                 }
             }
-
-            Section("Hinweis") {
-                Text("Die App berechnet oder prüft keine Zakat – sie erinnert nur an den Termin, den du selbst eingetragen hast.")
-                Text("Bei „Jährlich nach Hijri-Datum wiederholen“ fällt eine Erinnerung in einem Jahr ohne diesen Hijri-Tag (z. B. den 30. eines kürzeren Monats) für dieses eine Jahr ersatzlos aus.")
-            }
-            .font(.caption)
-            .foregroundStyle(.secondary)
         }
         .scrollContentBackground(.hidden)
         .background(Color("AppBackground").ignoresSafeArea())
@@ -451,40 +360,59 @@ private struct ZakatNotificationDetailView: View {
     }
 }
 
-private struct QiratNotificationDetailView: View {
-    @Binding var setting: QiratTimesNotificationSetting
+/// Every explanatory "Hinweis" text from across the Benachrichtigungen page
+/// and its detail screens, consolidated behind a single info button in the
+/// main page's toolbar — the same button-triggered-sheet pattern as the
+/// Gebetsrichtung ("Qibla") tab's `QiblaInfoSheet`, just built as a plain
+/// `Form` (not the glass-card browsing layout `IslamicCalendarPageStyle`
+/// documents as off-limits for Form-style pages like this one).
+private struct NotificationInfoSheet: View {
+    @Environment(\.dismiss) private var dismiss
 
     var body: some View {
-        Form {
-            Section {
-                Toggle("An Karāha erinnern", isOn: $setting.isEnabled)
-            } footer: {
-                Text("Erinnert zu Beginn zweier täglicher Zeitfenster: Sonnenaufgangs-Karāha ab Shuruk (ungefähr 15–20 Minuten), und einer Näherung kurz vor Maghrib.")
-            }
+        NavigationStack {
+            Form {
+                Section("Allgemein") {
+                    Text("Benachrichtigungen umgehen keinen Stummmodus und keinen Fokus – sie folgen den iOS-Systemeinstellungen wie jede andere App.")
+                }
+                .font(.caption)
+                .foregroundStyle(.secondary)
 
-            if setting.isEnabled {
-                Section("Ton") {
-                    Picker("Ton", selection: $setting.sound) {
-                        ForEach(NotificationSoundOption.allCases) { option in
-                            Text(option.title).tag(option)
-                        }
-                    }
-                    .pickerStyle(.segmented)
+                Section("Freiwilliges Fasten") {
+                    Text("Die Erinnerung wird am Vorabend des Fastentags nach Maghrib geplant – für einen Montag also nach Maghrib am Sonntag, nicht am Montag selbst.")
+                    Text("Während des Ramadan sowie an Eid al-Fitr, Eid al-Adha und den drei Tagen von Tashriq danach wird keine Erinnerung für freiwilliges Fasten geplant.")
+                    Text("Fehlen für den Fastentag selbst gültige Fajr- oder Maghrib-Zeiten, wird die Erinnerung ohne Dauerangabe geplant statt eine Dauer zu schätzen.")
+                }
+                .font(.caption)
+                .foregroundStyle(.secondary)
+
+                Section("Zakat-Stichtag") {
+                    Text("Gilt für alle Kalendereinträge, die du als Zakat-Stichtag markiert hast. Ist der Schalter in der Übersicht aus, bleiben die Einträge im Kalender sichtbar, aber es wird keine Erinnerung geplant.")
+                    Text("Die App berechnet oder prüft keine Zakat – sie erinnert nur an den Termin, den du selbst eingetragen hast.")
+                    Text("Bei „Jährlich nach Hijri-Datum wiederholen“ fällt eine Erinnerung in einem Jahr ohne diesen Hijri-Tag (z. B. den 30. eines kürzeren Monats) für dieses eine Jahr ersatzlos aus.")
+                }
+                .font(.caption)
+                .foregroundStyle(.secondary)
+
+                Section("Karāha") {
+                    Text("Erinnert zu Beginn zweier täglicher Zeitfenster: Sonnenaufgangs-Karāha ab Shuruk (ungefähr 15–20 Minuten), und einer Näherung kurz vor Maghrib.")
+                    Text("„Karāha\" bezeichnet hier Zeitfenster, die nach überlieferter Auffassung für freiwillige Gebete ungünstig sind. Die fünf Pflichtgebete sind davon nicht betroffen.")
+                    Text("Die Sonnenaufgangs-Karāha beginnt exakt mit Shuruk, nie mit Fajr. Das ist eine andere Zeit als die separate hanafitische Einschränkung für freiwillige Gebete zwischen Fajr und Sonnenaufgang, die hier nicht als Benachrichtigung angeboten wird.")
+                    Text("Das Fenster vor Maghrib beginnt NICHT mit Asr – Asr bleibt bis Maghrib gültig. Beide Zeitfenster-Enden sind einstellbare Näherungswerte, keine exakten Grenzen, da keine orts- und tagesgenaue Quelle für den exakten Beginn dieser Phasen vorliegt.")
+                }
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            }
+            .scrollContentBackground(.hidden)
+            .background(Color("AppBackground").ignoresSafeArea())
+            .navigationTitle("Hinweise")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button("Schließen") { dismiss() }
                 }
             }
-
-            Section("Hinweis") {
-                Text("„Karāha\" bezeichnet hier Zeitfenster, die nach überlieferter Auffassung für freiwillige Gebete ungünstig sind. Die fünf Pflichtgebete sind davon nicht betroffen.")
-                Text("Die Sonnenaufgangs-Karāha beginnt exakt mit Shuruk, nie mit Fajr. Das ist eine andere Zeit als die separate hanafitische Einschränkung für freiwillige Gebete zwischen Fajr und Sonnenaufgang, die hier nicht als Benachrichtigung angeboten wird.")
-                Text("Das Fenster vor Maghrib beginnt NICHT mit Asr – Asr bleibt bis Maghrib gültig. Beide Zeitfenster-Enden sind einstellbare Näherungswerte, keine exakten Grenzen, da keine orts- und tagesgenaue Quelle für den exakten Beginn dieser Phasen vorliegt. Anpassbar in den Zeitparametern.")
-            }
-            .font(.caption)
-            .foregroundStyle(.secondary)
         }
-        .scrollContentBackground(.hidden)
-        .background(Color("AppBackground").ignoresSafeArea())
-        .navigationTitle("Karāha")
-        .navigationBarTitleDisplayMode(.inline)
     }
 }
 

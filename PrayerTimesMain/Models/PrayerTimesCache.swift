@@ -1,6 +1,6 @@
 import Foundation
 
-struct HijriDay: Codable, Equatable {
+nonisolated struct HijriDay: Codable, Equatable {
     let day: String
     let month: String
     let year: String
@@ -10,7 +10,7 @@ struct HijriDay: Codable, Equatable {
     }
 }
 
-struct PrayerDay: Codable, Identifiable {
+nonisolated struct PrayerDay: Codable, Identifiable {
     let isoDate: String
     let hijri: HijriDay?
     let times: PrayerTimes
@@ -18,7 +18,7 @@ struct PrayerDay: Codable, Identifiable {
     var id: String { isoDate }
 }
 
-struct PrayerTimesCache: Codable {
+nonisolated struct PrayerTimesCache: Codable {
     // Coordinate-based when the settings that produced this cache had a
     // confirmed location, address-based otherwise — see `LocationKey`.
     // Never compare cache entries by display name alone: the bundled city

@@ -24,7 +24,7 @@ struct AdjustedPrayerTimes {
     let dayOffsets: PrayerDayOffsets
 }
 
-extension PrayerTimes {
+nonisolated extension PrayerTimes {
     func applyingAdjustmentsWithDayOffsets(_ adjustments: PrayerAdjustments) -> AdjustedPrayerTimes {
         let fajr = PrayerTimeAdjuster.adjustTime(self.fajr, by: adjustments.fajr)
         let shuruk = PrayerTimeAdjuster.adjustTime(self.shuruk, by: adjustments.shuruk)

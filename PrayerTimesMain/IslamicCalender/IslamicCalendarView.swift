@@ -4,8 +4,7 @@ import SwiftUI
 struct IslamicCalendarView: View {
     @StateObject private var viewModel: IslamicCalendarViewModel
     // Owned here and injected into `viewModel` (same instance) so a
-    // personal note created/edited/deleted anywhere — the day sheet, the
-    // "Meine Notizen" overview, or the add/edit form — invalidates this
+    // personal note created/edited/deleted anywhere invalidates this
     // view immediately, without any explicit refresh call: SwiftUI
     // re-renders whenever this `@StateObject`'s `objectWillChange` fires,
     // which recomputes `monthGridDays` (and thus the grid's indicator dots)
@@ -17,6 +16,12 @@ struct IslamicCalendarView: View {
     @State private var showInfoSheet = false
     @State private var showHolidayOverview = false
     @State private var showPersonalEntriesOverview = false
+    // Set by `PersonalCalendarOverviewView.onSelectEntry` right before it
+    // dismisses itself; consumed in that sheet's `onDismiss` to open the
+    // tapped note's day sheet only after the overview has fully closed —
+    // presenting two sheets from the same state change in the same tick
+    // is unreliable in SwiftUI, so this sequences them instead.
+    @State private var pendingNotesSheetDate: Date?
 
     init(settingsProvider: @escaping () -> AutoPrayerSettings) {
         let personalCalendarViewModel = PersonalCalendarViewModel()
@@ -144,10 +149,20 @@ struct IslamicCalendarView: View {
                 .presentationDetents([.medium, .large])
                 .presentationDragIndicator(.visible)
             }
-            .sheet(isPresented: $showPersonalEntriesOverview) {
-                PersonalCalendarOverviewView(viewModel: personalCalendarViewModel)
-                    .presentationDetents([.medium, .large])
-                    .presentationDragIndicator(.visible)
+            .sheet(isPresented: $showPersonalEntriesOverview, onDismiss: {
+                guard let date = pendingNotesSheetDate else { return }
+                pendingNotesSheetDate = nil
+                presentSheet(for: date)
+            }) {
+                PersonalCalendarOverviewView(viewModel: personalCalendarViewModel) { entry in
+                    guard let iso = entry.isoDate, let date = PersonalCalendarViewModel.date(from: iso) else { return }
+                    selectedDate = date
+                    displayedMonth = startOfMonth(for: date)
+                    pendingNotesSheetDate = date
+                    showPersonalEntriesOverview = false
+                }
+                .presentationDetents([.medium, .large])
+                .presentationDragIndicator(.visible)
             }
             .task(id: displayedYear) {
                 await viewModel.loadYear(for: displayedMonth)

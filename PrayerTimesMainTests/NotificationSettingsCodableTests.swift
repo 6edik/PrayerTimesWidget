@@ -6,7 +6,7 @@ import Foundation
 struct NotificationSettingsCodableTests {
     @Test func roundTripsThroughJSON() async throws {
         var settings = NotificationSettings.zero
-        settings.fajr = PrayerNotificationSetting(isEnabled: true, reminderLeadTime: .fifteenMinutes, sound: .silent)
+        settings.fajr = PrayerNotificationSetting(isEnabled: true)
         settings.setSetting(
             HolidayNotificationSetting(isEnabled: true, notifyDayBefore: true, notifyOnDay: false, hour: 21, minute: 30),
             for: .ramadanStart
@@ -16,7 +16,7 @@ struct NotificationSettingsCodableTests {
         let decoded = try JSONDecoder().decode(NotificationSettings.self, from: data)
 
         #expect(decoded == settings)
-        #expect(decoded.setting(for: .fajr).reminderLeadTime == .fifteenMinutes)
+        #expect(decoded.setting(for: .fajr).isEnabled)
         #expect(decoded.setting(for: .ramadanStart).hour == 21)
     }
 

@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct IslamicDayEventsSheet: View {
+    @Environment(\.dismiss) private var dismiss
     let day: IslamicDaySheetData
     @StateObject private var dayViewModel: IslamicDaySheetViewModel
     @ObservedObject var personalCalendarViewModel: PersonalCalendarViewModel
@@ -8,6 +9,16 @@ struct IslamicDayEventsSheet: View {
     @State private var showAddEntrySheet = false
     @State private var entryToEdit: PersonalCalendarEntry?
     @State private var entryPendingDeletion: PersonalCalendarEntry?
+    @State private var zakatDueDate: ZakatDueDate? = ZakatDueDateStore().load()
+
+    private var zakatMatchesToday: Bool {
+        guard let zakatDueDate, zakatDueDate.isEnabled else { return false }
+        return ZakatOccurrenceCalculator.matches(
+            hijriDay: zakatDueDate.hijriDay,
+            hijriMonth: zakatDueDate.hijriMonth,
+            date: day.date
+        )
+    }
 
     init(
         day: IslamicDaySheetData,
@@ -24,16 +35,24 @@ struct IslamicDayEventsSheet: View {
     }
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 16) {
-                headerSection
-                prayerTimesSection
-                eventsSection
-                personalEntriesSection
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 16) {
+                    headerSection
+                    eventsSection
+                    prayerTimesSection
+                    personalEntriesSection
+                }
+                .padding()
             }
-            .padding()
+            .background(Color("AppBackground").ignoresSafeArea())
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    IslamicCalendarCloseButton { dismiss() }
+                }
+            }
         }
-        .background(Color("AppBackground").ignoresSafeArea())
         .task {
             dayViewModel.load()
         }
@@ -88,7 +107,7 @@ struct IslamicDayEventsSheet: View {
                         Button {
                             entryToEdit = entry
                         } label: {
-                            PersonalCalendarEntryRow(entry: entry, showsDate: false)
+                            PersonalCalendarEntryRow(entry: entry, showsDate: false, isCompact: true)
                         }
                         .buttonStyle(.plain)
 
@@ -213,15 +232,26 @@ struct IslamicDayEventsSheet: View {
         }
     }
 
+    // Hidden entirely (no "Ereignisse" title, no empty-state text) when
+    // this day has no relevant event — `day.events` already only ever
+    // contains AlAdhan entries that survived `IslamicHolidayClassifier
+    // .filterRelevant` (excluded titles like "Urs of …"/"Birth of …" never
+    // reach here), so an empty list here always means "no relevant event",
+    // never "events exist but were filtered for display only". The user's
+    // own Zakat-due-date (`zakatMatchesToday`, from the separate
+    // `ZakatDueDateStore` — never an AlAdhan entry) counts as relevant too
+    // and can make this block visible even when `day.events` is empty.
+    @ViewBuilder
     private var eventsSection: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text("Ereignisse")
-                .font(.headline)
+        if !day.events.isEmpty || zakatMatchesToday {
+            VStack(alignment: .leading, spacing: 10) {
+                Text("Ereignisse")
+                    .font(.headline)
 
-            if day.events.isEmpty {
-                Text("Keine Ereignisse an diesem Tag")
-                    .foregroundStyle(.secondary)
-            } else {
+                if zakatMatchesToday, let zakatDueDate {
+                    zakatEventCard(zakatDueDate)
+                }
+
                 ForEach(day.events) { event in
                     VStack(alignment: .leading, spacing: 4) {
                         Text(event.title)
@@ -242,6 +272,44 @@ struct IslamicDayEventsSheet: View {
                 }
             }
         }
+    }
+
+    /// Visually distinct from the plain AlAdhan event cards above/below it
+    /// — its own colored icon badge (green, never the gold/orange
+    /// used for curated holidays elsewhere) so it reads as its own
+    /// category at a glance, not just another AlAdhan entry.
+    private func zakatEventCard(_ zakatDueDate: ZakatDueDate) -> some View {
+        HStack(spacing: 12) {
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(
+                    LinearGradient(
+                        colors: [Color.green.opacity(0.9), Color.green.opacity(0.65)],
+                        startPoint: .top,
+                        endPoint: .bottom
+                    )
+                )
+                .frame(width: 44, height: 44)
+                .overlay {
+                    Image(systemName: "banknote")
+                        .font(.system(size: 18, weight: .semibold))
+                        .foregroundStyle(.white)
+                }
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Zakat-Stichtag")
+                    .font(.headline)
+
+                Text("Jedes Hijri-Jahr am \(zakatDueDate.hijriDay). \(HijriDateFormatting.monthName(zakatDueDate.hijriMonth))")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            Spacer()
+        }
+        .padding()
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(.thinMaterial)
+        .clipShape(RoundedRectangle(cornerRadius: 12))
     }
 
     /// Voluntary-fasting estimate for this day, computed centrally by

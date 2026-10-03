@@ -248,11 +248,18 @@ final class IslamicCalendarViewModel: ObservableObject {
         // instead of once per day cell (a month view can have 35-42 cells).
         let cachedDays = prayerStore.loadAllDays(settings: settingsProvider())
         let isoFormatter = isoDateFormatter()
+        // Loaded once per grid build, not once per cell — same reasoning
+        // as `cachedDays` above. `nil`/disabled means no day in this grid
+        // can ever match.
+        let zakatDueDate = ZakatDueDateStore().load()
 
         return dates.map { date in
             let prayer = cachedDays[isoFormatter.string(from: date)]
             let dayEvents = allEventsForDay(date)
             let isHighlighted = dayEvents.contains { IslamicHolidayClassifier.isMajorHoliday($0, hijriCalendar: hijriCalendar) }
+            let hasZakatDueDate = zakatDueDate.map {
+                $0.isEnabled && ZakatOccurrenceCalculator.matches(hijriDay: $0.hijriDay, hijriMonth: $0.hijriMonth, date: date, hijriCalendar: hijriCalendar)
+            } ?? false
 
             return IslamicCalendarDayItem(
                 date: date,
@@ -263,6 +270,7 @@ final class IslamicCalendarViewModel: ObservableObject {
                 hijriText: hijriDayText(for: date),
                 allEventsForDay: dayEvents,
                 isHighlightedHoliday: isHighlighted,
+                hasZakatDueDate: hasZakatDueDate,
                 hasPersonalEntries: personalCalendarViewModel.hasEntries(for: date),
                 prayerDay: prayer
             )
@@ -322,17 +330,13 @@ extension IslamicCalendarViewModel {
         return deduplicated(days: merged)
     }
 
+    // Delegates to the one central dedup+sort function every special-day
+    // consumer shares (see `IslamicHolidayClassifier.deduplicatedAndSorted`)
+    // — this merge across several cached years is a second place exact
+    // duplicates could otherwise slip through (e.g. the same holiday
+    // persisted under two adjacent years at a year boundary).
     private func deduplicated(days: [IslamicSpecialDay]) -> [IslamicSpecialDay] {
-        var seen = Set<String>()
-
-        return days
-            .sorted { $0.sortDate < $1.sortDate }
-            .filter { item in
-                let gregorianDay = calendar.startOfDay(for: item.sortDate).timeIntervalSince1970
-                let hijriKey = IslamicHolidayClassifier.hijriHolidayKey(for: item, hijriCalendar: hijriCalendar)
-                let key = "\(gregorianDay)-\(hijriKey?.day ?? -1)-\(hijriKey?.month ?? -1)"
-                return seen.insert(key).inserted
-            }
+        IslamicHolidayClassifier.deduplicatedAndSorted(days, hijriCalendar: hijriCalendar)
     }
 
     private func missingYears(in years: [Int]) -> [Int] {
@@ -442,6 +446,60 @@ extension IslamicCalendarViewModel {
 
     func featuredHoliday(for referenceDate: Date) -> IslamicSpecialDay? {
         visibleHolidayOverviewDays(from: referenceDate, limit: 1).first
+    }
+
+    /// The synthetic Zakat-due-date occurrences, as display-only
+    /// `IslamicSpecialDay` values — never persisted. Filters out any
+    /// occurrence already in the past relative to `referenceDate` the
+    /// same way `visibleHolidayOverviewDays` filters the curated
+    /// holidays, so a stale earlier-this-Hijri-year date can never
+    /// wrongly win the "nächstes Ereignis" comparison.
+    private func zakatSpecialDays(for zakatDueDate: ZakatDueDate?, from referenceDate: Date, limit: Int) -> [IslamicSpecialDay] {
+        guard let zakatDueDate, zakatDueDate.isEnabled else { return [] }
+
+        let occurrences = ZakatOccurrenceCalculator.upcomingOccurrences(
+            hijriDay: zakatDueDate.hijriDay,
+            hijriMonth: zakatDueDate.hijriMonth,
+            now: referenceDate,
+            limit: limit,
+            maxHijriYearsAhead: 12,
+            hijriCalendar: hijriCalendar
+        )
+
+        let start = calendar.startOfDay(for: referenceDate)
+
+        return occurrences
+            .filter { calendar.startOfDay(for: $0) >= start }
+            .map {
+                ZakatOccurrenceCalculator.specialDay(
+                    hijriDay: zakatDueDate.hijriDay,
+                    hijriMonth: zakatDueDate.hijriMonth,
+                    occurrence: $0,
+                    hijriCalendar: hijriCalendar
+                )
+            }
+    }
+
+    /// The single, centrally deduplicated and chronologically sorted
+    /// "Besondere Tage" list — merges the curated AlAdhan holidays with
+    /// the user's own Zakat-due-date occurrences (when enabled) through
+    /// `IslamicHolidayClassifier.deduplicatedAndSorted`, the exact same
+    /// function `filterRelevant` already applies to the AlAdhan side.
+    /// This is the one source every consumer (the overview sheet, and
+    /// any future caller) must use instead of merging these two sources
+    /// itself, so none of them can silently disagree on what counts as
+    /// "the same" special day or show a duplicate.
+    func visibleSpecialDays(from referenceDate: Date, limit: Int, zakatDueDate: ZakatDueDate?) -> [IslamicSpecialDay] {
+        let holidays = visibleHolidayOverviewDays(from: referenceDate, limit: max(limit, 8))
+        let zakat = zakatSpecialDays(for: zakatDueDate, from: referenceDate, limit: max(limit, 10))
+
+        return IslamicHolidayClassifier.deduplicatedAndSorted(holidays + zakat, hijriCalendar: hijriCalendar)
+            .prefix(limit)
+            .map { $0 }
+    }
+
+    func featuredSpecialDay(from referenceDate: Date, zakatDueDate: ZakatDueDate?) -> IslamicSpecialDay? {
+        visibleSpecialDays(from: referenceDate, limit: 1, zakatDueDate: zakatDueDate).first
     }
 
     func holidayFocusDays(around referenceDate: Date) -> [IslamicSpecialDay] {

@@ -110,7 +110,7 @@ struct NotificationSchedulerFastingTests {
         var settings = NotificationSettings.zero
         settings.voluntaryFasting = VoluntaryFastingNotificationSetting(
             monday: true, thursday: true, whiteDays: true,
-            minutesAfterMaghrib: minutesAfterMaghrib, sound: .standard
+            minutesAfterMaghrib: minutesAfterMaghrib
         )
         return settings
     }

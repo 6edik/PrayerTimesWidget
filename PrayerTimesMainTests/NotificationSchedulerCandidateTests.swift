@@ -84,53 +84,6 @@ struct NotificationSchedulerCandidateTests {
         #expect(candidates.isEmpty)
     }
 
-    @Test func enabledPrayerWithReminderProducesBothStartAndReminderCandidates() async throws {
-        let suite1 = makeSuiteName(); let suite2 = makeSuiteName(); let suite3 = makeSuiteName()
-        defer { cleanup([suite1, suite2, suite3]) }
-
-        let (timesStore, settingsStore, calendarStore) = makeSettings(
-            prayerTimesSuite: suite1, prayerSettingsSuite: suite2, calendarSuite: suite3
-        )
-
-        let autoSettings = AutoPrayerSettings(
-            address: "Aachen, Germany",
-            location: PrayerLocation(name: "Aachen, Germany", coordinate: GeoCoordinate(latitude: 50.7755, longitude: 6.0836)),
-            method: .ditib,
-            adjustments: .zero
-        )
-        settingsStore.saveAutoSettings(autoSettings)
-
-        // Far in the future so it's never filtered out as "past".
-        let futureISO = isoString(daysFromNow: 3)
-        let cache = PrayerTimesCache(
-            locationKey: LocationKey.key(address: autoSettings.address, location: autoSettings.location),
-            methodKey: String(describing: autoSettings.method),
-            fetchedAt: Date(),
-            days: [PrayerDay(isoDate: futureISO, hijri: nil, times: makeTimes(fajr: "05:30"))]
-        )
-        timesStore.replaceCache(with: cache)
-
-        var settings = NotificationSettings.zero
-        settings.fajr = PrayerNotificationSetting(isEnabled: true, reminderLeadTime: .tenMinutes, sound: .standard)
-
-        let scheduler = NotificationScheduler(
-            timesStore: timesStore,
-            settingsStore: settingsStore,
-            notificationSettingsStore: NotificationSettingsStore(suiteName: makeSuiteName()),
-            calendarStore: calendarStore
-        )
-
-        let candidates = scheduler.prayerCandidates(settings: settings)
-        let identifiers = Set(candidates.map(\.identifier))
-
-        #expect(identifiers.contains("\(NotificationScheduler.prayerIdentifierPrefix)fajr.\(futureISO).start"))
-        #expect(identifiers.contains("\(NotificationScheduler.prayerIdentifierPrefix)fajr.\(futureISO).reminder"))
-
-        let start = candidates.first { $0.identifier.hasSuffix(".start") }!
-        let reminder = candidates.first { $0.identifier.hasSuffix(".reminder") }!
-        #expect(start.fireDate.timeIntervalSince(reminder.fireDate) == 10 * 60)
-    }
-
     @Test func minuteAdjustmentShiftsTheScheduledTime() async throws {
         let suite1 = makeSuiteName(); let suite2 = makeSuiteName(); let suite3 = makeSuiteName()
         defer { cleanup([suite1, suite2, suite3]) }
@@ -159,7 +112,7 @@ struct NotificationSchedulerCandidateTests {
         ))
 
         var settings = NotificationSettings.zero
-        settings.fajr = PrayerNotificationSetting(isEnabled: true, reminderLeadTime: .none, sound: .standard)
+        settings.fajr = PrayerNotificationSetting(isEnabled: true)
 
         let scheduler = NotificationScheduler(
             timesStore: timesStore,
@@ -209,7 +162,7 @@ struct NotificationSchedulerCandidateTests {
         ))
 
         var settings = NotificationSettings.zero
-        settings.isha = PrayerNotificationSetting(isEnabled: true, reminderLeadTime: .none, sound: .standard)
+        settings.isha = PrayerNotificationSetting(isEnabled: true)
 
         let scheduler = NotificationScheduler(
             timesStore: timesStore,
@@ -266,7 +219,7 @@ struct NotificationSchedulerCandidateTests {
         settingsStore.saveAutoSettings(newSettings)
 
         var settings = NotificationSettings.zero
-        settings.fajr = PrayerNotificationSetting(isEnabled: true, reminderLeadTime: .none, sound: .standard)
+        settings.fajr = PrayerNotificationSetting(isEnabled: true)
 
         let scheduler = NotificationScheduler(
             timesStore: timesStore,
@@ -289,7 +242,7 @@ struct NotificationSchedulerCandidateTests {
         settingsStore.saveAutoSettings(AutoPrayerSettings())
 
         var settings = NotificationSettings.zero
-        settings.fajr = PrayerNotificationSetting(isEnabled: true, reminderLeadTime: .none, sound: .standard)
+        settings.fajr = PrayerNotificationSetting(isEnabled: true)
 
         let scheduler = NotificationScheduler(
             timesStore: timesStore,

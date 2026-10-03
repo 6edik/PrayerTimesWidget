@@ -9,7 +9,6 @@ struct NotificationCandidate: Equatable {
     let fireDate: Date
     let title: String
     let body: String
-    let sound: NotificationSoundOption
 
     /// iOS caps an app at 64 pending local notifications. Given a pool of
     /// candidates (prayers + holidays together) and how much of that
@@ -47,7 +46,7 @@ struct NotificationScheduler {
     private let notificationSettingsStore: NotificationSettingsStore
     private let calendarStore: SharedIslamicCalendarStore
     private let calendarService: IslamicCalendarService
-    private let personalCalendarStore: PersonalCalendarStore
+    private let zakatDueDateStore: ZakatDueDateStore
     private let center: UNUserNotificationCenter
     private let hijriCalendar: Calendar
     private let deviceCalendar: Calendar
@@ -58,7 +57,7 @@ struct NotificationScheduler {
         notificationSettingsStore: NotificationSettingsStore = NotificationSettingsStore(),
         calendarStore: SharedIslamicCalendarStore = SharedIslamicCalendarStore(),
         calendarService: IslamicCalendarService = IslamicCalendarService(),
-        personalCalendarStore: PersonalCalendarStore = PersonalCalendarStore(),
+        zakatDueDateStore: ZakatDueDateStore = ZakatDueDateStore(),
         center: UNUserNotificationCenter = .current()
     ) {
         self.timesStore = timesStore
@@ -66,7 +65,7 @@ struct NotificationScheduler {
         self.notificationSettingsStore = notificationSettingsStore
         self.calendarStore = calendarStore
         self.calendarService = calendarService
-        self.personalCalendarStore = personalCalendarStore
+        self.zakatDueDateStore = zakatDueDateStore
         self.center = center
 
         var hijri = Calendar(identifier: .islamicUmmAlQura)
@@ -167,21 +166,8 @@ struct NotificationScheduler {
                     identifier: "\(Self.prayerIdentifierPrefix)\(kind.rawValue).\(isoDate).start",
                     fireDate: fireDate,
                     title: displayName,
-                    body: "Es ist Zeit für \(displayName).",
-                    sound: config.sound
+                    body: "Es ist Zeit für \(displayName)."
                 ))
-
-                if config.reminderLeadTime != .none {
-                    let reminderDate = fireDate.addingTimeInterval(-Double(config.reminderLeadTime.rawValue * 60))
-
-                    result.append(NotificationCandidate(
-                        identifier: "\(Self.prayerIdentifierPrefix)\(kind.rawValue).\(isoDate).reminder",
-                        fireDate: reminderDate,
-                        title: displayName,
-                        body: "\(displayName) beginnt in \(config.reminderLeadTime.rawValue) Minuten.",
-                        sound: config.sound
-                    ))
-                }
             }
         }
 
@@ -267,8 +253,7 @@ struct NotificationScheduler {
                         identifier: "\(Self.holidayIdentifierPrefix)\(holiday.rawValue).\(isoKey(dayStart)).onday",
                         fireDate: fireDate,
                         title: holiday.displayName,
-                        body: "Heute: \(holiday.displayName).",
-                        sound: .standard
+                        body: "Heute: \(holiday.displayName)."
                     ))
                 }
 
@@ -279,8 +264,7 @@ struct NotificationScheduler {
                         identifier: "\(Self.holidayIdentifierPrefix)\(holiday.rawValue).\(isoKey(dayBefore)).before",
                         fireDate: fireDate,
                         title: holiday.displayName,
-                        body: "Morgen: \(holiday.displayName).",
-                        sound: .standard
+                        body: "Morgen: \(holiday.displayName)."
                     ))
                 }
             }
@@ -395,8 +379,7 @@ struct NotificationScheduler {
                 identifier: "\(Self.fastingIdentifierPrefix)\(iso)",
                 fireDate: fireDate,
                 title: "Morgen: freiwilliges Fasten",
-                body: Self.fastingBody(occasions: occasions, duration: duration),
-                sound: fastingSettings.sound
+                body: Self.fastingBody(occasions: occasions, duration: duration)
             ))
         }
 
@@ -435,22 +418,23 @@ struct NotificationScheduler {
 
     // MARK: - Zakat candidates
 
-    /// Reminders for the user's own Zakat-due-date entries
-    /// (`PersonalCalendarEntry` with `kind == .zakatDueDate`). Never
-    /// computes or checks whether Zakat is actually owed — purely a
-    /// personal reminder for a Hijri day/month the user chose themselves.
-    /// The note text itself is never included in the notification body
-    /// (spec item 10): the body is always the same neutral sentence.
+    /// Reminders for the user's own Zakat-due-date rule — configured under
+    /// "Besondere Tage" and persisted in the dedicated `ZakatDueDateStore`,
+    /// entirely separate from "Meine Notizen" (`PersonalCalendarStore`).
+    /// Never computes or checks whether Zakat is actually owed — purely a
+    /// personal reminder for the Hijri day/month the user chose
+    /// themselves. The notification body is always the same neutral
+    /// sentence (spec item 10), and never claims Zakat is actually due.
     ///
-    /// Every Zakat entry recurs every Hijri year — there is no one-time
-    /// variant. `ZakatOccurrenceCalculator.upcomingOccurrences` expands
-    /// the entry's fixed (day, month) rule into several upcoming concrete
-    /// dates (already bounded and gap-safe — see that type). Each
-    /// candidate's identifier is keyed by the entry's stable `id` plus
-    /// that specific occurrence's ISO date, so editing an entry's rule and
-    /// calling `reschedule()` again (which always removes every
-    /// previously-owned request first) can never leave a stale or
-    /// duplicate Zakat reminder behind.
+    /// The rule recurs every Hijri year — there is no one-time variant.
+    /// `ZakatOccurrenceCalculator.upcomingOccurrences` expands the fixed
+    /// (day, month) rule into several upcoming concrete dates (already
+    /// bounded and gap-safe — see that type). Each candidate's identifier
+    /// is keyed only by that specific occurrence's ISO date (there is at
+    /// most one Zakat rule, so no entry id is needed), so editing or
+    /// deleting the rule and calling `reschedule()` again (which always
+    /// removes every previously-owned request first) can never leave a
+    /// stale or duplicate Zakat reminder behind.
     ///
     /// Uses the *configured prayer location's* own timezone — not the
     /// device's — for both the day boundary and the reminder's clock time,
@@ -462,8 +446,7 @@ struct NotificationScheduler {
         let zakatSettings = settings.zakat
         guard zakatSettings.isEnabled else { return [] }
 
-        let zakatEntries = personalCalendarStore.loadAll().filter { $0.kind == .zakatDueDate }
-        guard !zakatEntries.isEmpty else { return [] }
+        guard let dueDate = zakatDueDateStore.load(), dueDate.isEnabled else { return [] }
 
         let autoSettings = settingsStore.loadAutoSettings()
         let cachedDays = timesStore.loadAllDays(settings: autoSettings)
@@ -475,41 +458,35 @@ struct NotificationScheduler {
 
         var result: [NotificationCandidate] = []
 
-        for entry in zakatEntries {
-            guard let day = entry.hijriDay, let month = entry.hijriMonth else { continue }
+        let occurrences = ZakatOccurrenceCalculator.upcomingOccurrences(
+            hijriDay: dueDate.hijriDay,
+            hijriMonth: dueDate.hijriMonth,
+            now: now,
+            hijriCalendar: locationHijriCalendar
+        )
 
-            let occurrences = ZakatOccurrenceCalculator.upcomingOccurrences(
-                hijriDay: day,
-                hijriMonth: month,
-                now: now,
-                hijriCalendar: locationHijriCalendar
-            )
+        for occurrence in occurrences {
+            let dayStart = locationCalendar.startOfDay(for: occurrence)
+            let occurrenceKey = isoKey(dayStart, calendar: locationCalendar)
 
-            for occurrence in occurrences {
-                let dayStart = locationCalendar.startOfDay(for: occurrence)
-                let occurrenceKey = isoKey(dayStart, calendar: locationCalendar)
+            if let fireDate = locationCalendar.date(bySettingHour: zakatSettings.hour, minute: zakatSettings.minute, second: 0, of: dayStart) {
+                result.append(NotificationCandidate(
+                    identifier: "\(Self.zakatIdentifierPrefix)\(occurrenceKey).onday",
+                    fireDate: fireDate,
+                    title: "Zakat-Stichtag",
+                    body: "Dein Zakat-Stichtag ist heute."
+                ))
+            }
 
-                if let fireDate = locationCalendar.date(bySettingHour: zakatSettings.hour, minute: zakatSettings.minute, second: 0, of: dayStart) {
-                    result.append(NotificationCandidate(
-                        identifier: "\(Self.zakatIdentifierPrefix)\(entry.id.uuidString).\(occurrenceKey).onday",
-                        fireDate: fireDate,
-                        title: "Zakat-Stichtag",
-                        body: "Dein eingetragener Zakat-Stichtag ist heute. Prüfe deine Zakat-Berechnung.",
-                        sound: .standard
-                    ))
-                }
-
-                if zakatSettings.notifyDayBefore,
-                   let dayBefore = locationCalendar.date(byAdding: .day, value: -1, to: dayStart),
-                   let fireDate = locationCalendar.date(bySettingHour: zakatSettings.hour, minute: zakatSettings.minute, second: 0, of: dayBefore) {
-                    result.append(NotificationCandidate(
-                        identifier: "\(Self.zakatIdentifierPrefix)\(entry.id.uuidString).\(occurrenceKey).before",
-                        fireDate: fireDate,
-                        title: "Zakat-Stichtag",
-                        body: "Morgen ist dein eingetragener Zakat-Stichtag. Prüfe deine Zakat-Berechnung.",
-                        sound: .standard
-                    ))
-                }
+            if zakatSettings.notifyDayBefore,
+               let dayBefore = locationCalendar.date(byAdding: .day, value: -1, to: dayStart),
+               let fireDate = locationCalendar.date(bySettingHour: zakatSettings.hour, minute: zakatSettings.minute, second: 0, of: dayBefore) {
+                result.append(NotificationCandidate(
+                    identifier: "\(Self.zakatIdentifierPrefix)\(occurrenceKey).before",
+                    fireDate: fireDate,
+                    title: "Zakat-Stichtag",
+                    body: "Morgen ist dein Zakat-Stichtag."
+                ))
             }
         }
 
@@ -521,25 +498,28 @@ struct NotificationScheduler {
     /// One candidate per cached day for the Sonnenaufgangs-Karāha window
     /// (starts exactly at Shuruk, never Fajr), and one for the Karāha-vor-
     /// Maghrib **approximation** (see `QiratTimeResolver`'s doc comment)
-    /// — firing right at each window's own start. Both bodies are
-    /// deliberately short (no fiqh explanation in the push banner — that
-    /// belongs in the settings' info view instead). The pre-Maghrib body
-    /// never claims Asr itself is impermissible: Asr remains valid until
-    /// Maghrib; it only encourages not postponing it, and only where the
-    /// approximation is latitude-plausible. A day with no resolvable
-    /// window (missing/malformed cached times, or an out-of-range
-    /// latitude) simply contributes nothing for that day, never a guessed
-    /// time.
+    /// — firing right at each window's own start. Both share the same
+    /// compact title ("Karāha") and the same one-sentence body
+    /// ("Gebetspause bis HH:mm.", the window's own end time) — no fiqh
+    /// explanation, no full start–end span, in the push banner (that
+    /// belongs in the settings' info view instead). Neither body mentions
+    /// Asr at all, so neither can be read as claiming Asr itself becomes
+    /// impermissible at some point — Asr's own valid time still runs all
+    /// the way to Maghrib. Only scheduled where the approximation is
+    /// latitude-plausible. A day with no resolvable window
+    /// (missing/malformed cached times, or an out-of-range latitude)
+    /// simply contributes nothing for that day, never a guessed time.
     ///
     /// Identifiers are stable across reschedules (`isoDate` + which
     /// window), and `reschedule()` always removes every previously-owned
-    /// request under `qiratIdentifierPrefix` before rebuilding — so a
-    /// stale "afterFajr"/"beforeMaghrib"-suffixed request from an earlier
-    /// version of this feature (when the sunrise window was wrongly
-    /// anchored to Fajr instead of Shuruk, or the pre-Maghrib window to
-    /// Asr) is cleaned up the exact same way as any other request under
-    /// this prefix, without touching prayer/holiday/fasting/zakat
-    /// requests, which live under entirely separate prefixes.
+    /// request under `qiratIdentifierPrefix` before rebuilding — so an
+    /// older, longer-worded pending request (e.g. from before the body
+    /// text here was shortened, or an "afterFajr"/"beforeMaghrib"-suffixed
+    /// request from an earlier version of this feature) is cleaned up the
+    /// exact same way as any other request under this prefix, without
+    /// touching prayer/holiday/fasting/zakat requests, which live under
+    /// entirely separate prefixes and get rebuilt unchanged in the same
+    /// pass.
     func qiratCandidates(settings: NotificationSettings, now: Date = Date()) -> [NotificationCandidate] {
         guard settings.qirat.isEnabled else { return [] }
 
@@ -571,18 +551,17 @@ struct NotificationScheduler {
                     identifier: "\(Self.qiratIdentifierPrefix)sunriseKaraha.\(isoDate)",
                     fireDate: sunrise.start,
                     title: "Karāha",
-                    body: "Sonnenaufgang: Gebetspause bis ca. \(endClock).",
-                    sound: settings.qirat.sound
+                    body: "Gebetspause bis \(endClock)."
                 ))
             }
 
             if let lateMaghrib = windows.lateMaghribKaraha {
+                let endClock = FastingDurationCalculator.clockString(lateMaghrib.end, timezoneIdentifier: lateMaghrib.timezoneIdentifier)
                 result.append(NotificationCandidate(
                     identifier: "\(Self.qiratIdentifierPrefix)lateMaghribKaraha.\(isoDate)",
                     fireDate: lateMaghrib.start,
-                    title: "Karāha vor Maghrib",
-                    body: "Maghrib nähert sich. Asr nicht aufschieben.",
-                    sound: settings.qirat.sound
+                    title: "Karāha",
+                    body: "Gebetspause bis \(endClock)."
                 ))
             }
         }
@@ -617,7 +596,10 @@ struct NotificationScheduler {
         let content = UNMutableNotificationContent()
         content.title = candidate.title
         content.body = candidate.body
-        content.sound = candidate.sound == .silent ? nil : .default
+        // No app-level sound setting — `.default` already follows the
+        // system's own mute switch/Focus state like every other app's
+        // notifications, so there is nothing further to configure here.
+        content.sound = .default
 
         let interval = max(1, candidate.fireDate.timeIntervalSinceNow)
         let trigger = UNTimeIntervalNotificationTrigger(timeInterval: interval, repeats: false)

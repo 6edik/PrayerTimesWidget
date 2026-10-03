@@ -1,6 +1,6 @@
 import Foundation
 
-struct PrayerAdjustments: Codable, Equatable {
+nonisolated struct PrayerAdjustments: Codable, Equatable {
     var fajr: Int = 0
     var shuruk: Int = 0
     var dhuhr: Int = 0
@@ -26,7 +26,7 @@ struct PrayerDayOffsets: Equatable {
     nonisolated static let zero = PrayerDayOffsets()
 }
 
-enum PrayerTimeAdjuster {
+nonisolated enum PrayerTimeAdjuster {
     struct AdjustedTime {
         /// The adjusted, wrapped "HH:mm" clock time — always a value within
         /// a single day, exactly like the un-adjusted API strings.

@@ -1,14 +1,17 @@
 import SwiftUI
 
 /// "Meine Notizen" — every personal note the user has ever created, past
-/// and future, sorted chronologically. Reachable from the calendar's
-/// toolbar; also the place to edit or delete a note outside the context of
-/// its day sheet.
+/// and future, sorted chronologically, shown as compact (2-line) previews.
+/// Reachable from the calendar's toolbar. Tapping an entry hands its date
+/// to `onSelectEntry` instead of editing inline — the caller (
+/// `IslamicCalendarView`) dismisses this sheet and opens that day's full
+/// day sheet instead, where the note appears alongside that day's prayer
+/// times and events and can be edited.
 struct PersonalCalendarOverviewView: View {
     @Environment(\.dismiss) private var dismiss
     @ObservedObject var viewModel: PersonalCalendarViewModel
+    var onSelectEntry: (PersonalCalendarEntry) -> Void = { _ in }
 
-    @State private var entryToEdit: PersonalCalendarEntry?
     @State private var entryPendingDeletion: PersonalCalendarEntry?
     @State private var showAddSheet = false
 
@@ -44,9 +47,6 @@ struct PersonalCalendarOverviewView: View {
                     }
                     .accessibilityLabel("Notiz hinzufügen")
                 }
-            }
-            .sheet(item: $entryToEdit) { entry in
-                PersonalCalendarEntryFormView(viewModel: viewModel, mode: .edit(entry))
             }
             .sheet(isPresented: $showAddSheet) {
                 PersonalCalendarEntryFormView(viewModel: viewModel, mode: .create(date: Date()))
@@ -96,9 +96,9 @@ struct PersonalCalendarOverviewView: View {
         List {
             ForEach(viewModel.allEntriesSortedByDate) { entry in
                 Button {
-                    entryToEdit = entry
+                    onSelectEntry(entry)
                 } label: {
-                    PersonalCalendarEntryRow(entry: entry, showsDate: true)
+                    PersonalCalendarEntryRow(entry: entry, showsDate: true, isCompact: true)
                 }
                 .buttonStyle(.plain)
                 .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16))

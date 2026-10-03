@@ -129,4 +129,49 @@ nonisolated enum ZakatOccurrenceCalculator {
         components.day = day
         return hijriCalendar.date(from: components)
     }
+
+    /// The exact title every synthetic Zakat `IslamicSpecialDay` carries —
+    /// a single named constant instead of the string literal repeated at
+    /// every call site, so `IslamicHolidayClassifier.dedupeKey`'s category
+    /// fallback and every UI spot that needs to recognize "is this row the
+    /// Zakat entry" (`IslamicHolidayOverviewSheet`, `IslamicDayEventsSheet`)
+    /// can never drift out of sync with each other.
+    static let specialDayTitle = "Zakat-Stichtag"
+
+    /// Builds a display-only `IslamicSpecialDay` for one concrete Zakat
+    /// occurrence — never persisted to `SharedIslamicCalendarStore` (this
+    /// is not an AlAdhan entry) and never written to the prayer-times
+    /// cache; purely a value used to merge the user's own Zakat-due-date
+    /// rule into the same chronological "Besondere Tage" list the 8
+    /// curated holidays use, via `IslamicHolidayClassifier
+    /// .deduplicatedAndSorted`.
+    static func specialDay(hijriDay: Int, hijriMonth: Int, occurrence: Date, hijriCalendar: Calendar = HijriDateFormatting.calendar()) -> IslamicSpecialDay {
+        let gregorianFormatter = DateFormatter()
+        gregorianFormatter.locale = Locale(identifier: "de_DE")
+        gregorianFormatter.dateStyle = .long
+
+        let monthFormatter = DateFormatter()
+        monthFormatter.locale = Locale(identifier: "de_DE")
+        monthFormatter.dateFormat = "LLLL"
+
+        let yearFormatter = DateFormatter()
+        yearFormatter.dateFormat = "yyyy"
+
+        let weekdayFormatter = DateFormatter()
+        weekdayFormatter.locale = Locale(identifier: "de_DE")
+        weekdayFormatter.dateFormat = "EEEE"
+
+        return IslamicSpecialDay(
+            title: specialDayTitle,
+            gregorianReadable: gregorianFormatter.string(from: occurrence),
+            gregorianMonthName: monthFormatter.string(from: occurrence),
+            gregorianYear: yearFormatter.string(from: occurrence),
+            hijriDay: "\(hijriDay)",
+            hijriMonth: HijriDateFormatting.monthName(hijriMonth),
+            hijriYear: "\(hijriCalendar.component(.year, from: occurrence))",
+            hijriWeekday: weekdayFormatter.string(from: occurrence),
+            sortDate: occurrence,
+            hijriMonthNumber: hijriMonth
+        )
+    }
 }

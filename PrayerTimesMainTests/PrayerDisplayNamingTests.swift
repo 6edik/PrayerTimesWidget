@@ -64,4 +64,10 @@ struct PrayerDisplayNamingTests {
         #expect(!PrayerDisplayNaming.isJumuahDhuhr(date: friday, timezoneIdentifier: "Not/AZone"))
         #expect(PrayerDisplayNaming.dhuhrLabel(date: friday, timezoneIdentifier: "Not/AZone") == "Dhuhr")
     }
+
+    /// The Jum'ah caption must be exactly this one line — no parenthetical,
+    /// no mention of a specific mosque's Khutba time, nothing appended.
+    @Test func khutbaClarificationCaptionIsExactlyThisOneLine() async throws {
+        #expect(PrayerDisplayNaming.khutbaClarificationCaption == "Berechnete Dhuhr Zeit")
+    }
 }

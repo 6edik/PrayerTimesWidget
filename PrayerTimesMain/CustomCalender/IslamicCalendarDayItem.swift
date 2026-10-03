@@ -23,6 +23,12 @@ struct IslamicCalendarDayItem: Identifiable {
     /// thing that should ever drive the cell's orange date-number color.
     let isHighlightedHoliday: Bool
 
+    /// True only when this day matches the user's own, currently-active
+    /// Zakat-due-date rule (`ZakatDueDateStore`) — never an AlAdhan entry.
+    /// Drives its own distinct date-number color, independent of
+    /// `isHighlightedHoliday` (orange).
+    let hasZakatDueDate: Bool
+
     /// True when the user has at least one personal calendar entry on this
     /// day. Deliberately independent of `isHighlightedHoliday` (orange) and
     /// the Sunnah-fasting highlight (blue, computed in the cell itself) —

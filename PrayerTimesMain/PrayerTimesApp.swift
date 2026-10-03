@@ -25,6 +25,7 @@ struct PrayerTimesApp: App {
                 .environmentObject(appearanceViewModel)
                 .fontDesign(.serif)
                 .task {
+                    ZakatDueDateStore.migrateFromPersonalCalendarIfNeeded()
                     Self.scheduleAppRefresh()
                     await NotificationScheduler().reschedule()
                 }

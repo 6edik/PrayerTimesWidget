@@ -12,8 +12,7 @@ struct NotificationCandidateTests {
             identifier: id,
             fireDate: now.addingTimeInterval(minutesFromNow * 60),
             title: id,
-            body: id,
-            sound: .standard
+            body: id
         )
     }
 

@@ -22,40 +22,8 @@ enum PrayerNotificationKind: String, CaseIterable, Codable, Identifiable {
     }
 }
 
-enum NotificationSoundOption: String, Codable, CaseIterable, Identifiable {
-    case silent
-    case standard
-
-    var id: String { rawValue }
-
-    var title: String {
-        switch self {
-        case .silent: return "Lautlos"
-        case .standard: return "Mit Ton"
-        }
-    }
-}
-
-/// How long before the prayer's own start time an additional reminder
-/// should fire. `.none` means only the at-start notification is used.
-enum ReminderLeadTime: Int, Codable, CaseIterable, Identifiable {
-    case none = 0
-    case fiveMinutes = 5
-    case tenMinutes = 10
-    case fifteenMinutes = 15
-    case thirtyMinutes = 30
-
-    var id: Int { rawValue }
-
-    var title: String {
-        self == .none ? "Keine zusätzliche Erinnerung" : "\(rawValue) Minuten vorher"
-    }
-}
-
 struct PrayerNotificationSetting: Codable, Equatable {
     var isEnabled: Bool = false
-    var reminderLeadTime: ReminderLeadTime = .none
-    var sound: NotificationSoundOption = .standard
 }
 
 /// Reminders for the three voluntary-fasting occasions the app recognizes
@@ -68,7 +36,6 @@ struct VoluntaryFastingNotificationSetting: Codable, Equatable {
     var thursday: Bool = false
     var whiteDays: Bool = false
     var minutesAfterMaghrib: Int = 10
-    var sound: NotificationSoundOption = .standard
 
     var hasAnyEnabled: Bool {
         monday || thursday || whiteDays
@@ -108,7 +75,6 @@ struct ZakatNotificationSetting: Codable, Equatable {
 /// now exists.
 struct QiratTimesNotificationSetting: Codable, Equatable {
     var isEnabled: Bool = false
-    var sound: NotificationSoundOption = .standard
 }
 
 struct NotificationSettings: Codable, Equatable {
