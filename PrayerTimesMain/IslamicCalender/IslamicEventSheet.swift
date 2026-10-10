@@ -257,7 +257,13 @@ struct IslamicDayEventsSheet: View {
                         Text(event.title)
                             .font(.headline)
 
-                        Text(event.gregorianReadable)
+                        // `formattedGregorian` (German, from `sortDate`)
+                        // instead of `event.gregorianReadable` — that
+                        // stored string was built from AlAdhan's English
+                        // month name until recently, and anything already
+                        // cached from before that fix would otherwise
+                        // keep showing it here.
+                        Text(formattedGregorian(event.sortDate))
                             .font(.subheadline)
                             .foregroundStyle(.secondary)
 

@@ -130,7 +130,7 @@ struct PrayerTimesWidgetView: View {
 
     private func smallGregorianHeader() -> String {
         let formatter = DateFormatter()
-        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.locale = Locale(identifier: "de_DE")
         formatter.dateFormat = "d. MMM"
         return formatter.string(from: entry.date).uppercased()
     }

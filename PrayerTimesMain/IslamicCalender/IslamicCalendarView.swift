@@ -99,25 +99,19 @@ struct IslamicCalendarView: View {
                         showHolidayOverview = true
                     }
 
-                    TopBarActionButton(systemImage: "calendar", accessibilityLabel: "Heute") {
+                    // One button instead of two separate "Heute"/
+                    // "Aktualisieren" actions: jumping to today and
+                    // force-requerying its data belong together — there's
+                    // no reason to ever want one without the other here.
+                    TopBarActionButton(systemImage: "arrow.clockwise", accessibilityLabel: "Heute & aktualisieren") {
                         let today = Date()
                         selectedDate = today
                         displayedMonth = startOfMonth(for: today)
 
                         Task {
-                            await viewModel.loadYear(for: today)
+                            await viewModel.reloadYear(for: today)
+                            await viewModel.loadHolidayOverview(around: today)
                             presentSheet(for: today)
-                        }
-                    }
-
-                    TopBarActionButton(systemImage: "arrow.clockwise", accessibilityLabel: "Aktualisieren") {
-                        Task {
-                            await viewModel.reloadYear(for: selectedDate)
-                            await viewModel.loadHolidayOverview(around: selectedDate)
-
-                            if selectedDaySheet != nil {
-                                presentSheet(for: selectedDate)
-                            }
                         }
                     }
 

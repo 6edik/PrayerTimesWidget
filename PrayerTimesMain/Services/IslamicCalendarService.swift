@@ -32,31 +32,41 @@ struct IslamicCalendarService {
 
         let decoded = try JSONDecoder().decode(CalendarResponse.self, from: data)
 
-        let formatter = DateFormatter()
-        formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.dateFormat = "dd-MM-yyyy"
+        let parseFormatter = DateFormatter()
+        parseFormatter.locale = Locale(identifier: "en_US_POSIX")
+        parseFormatter.dateFormat = "dd-MM-yyyy"
+
+        // AlAdhan's own `month.en` is always English ("January", never
+        // "Januar") — every Gregorian display string for a special day is
+        // built locally from the already-parsed `sortDate` with a German
+        // formatter instead, so "Besondere Tage" never shows an English
+        // month name.
+        let readableFormatter = DateFormatter()
+        readableFormatter.locale = Locale(identifier: "de_DE")
+        readableFormatter.dateFormat = "d. MMMM yyyy"
+
+        let monthNameFormatter = DateFormatter()
+        monthNameFormatter.locale = Locale(identifier: "de_DE")
+        monthNameFormatter.dateFormat = "MMMM"
 
         return decoded.data.flatMap { day in
             let holidays = day.hijri.holidays
+            let sortDate = parseFormatter.date(from: day.gregorian.date) ?? .distantPast
 
             return holidays.map { holiday in
                 IslamicSpecialDay(
                     title: holiday,
-                    gregorianReadable: formattedGregorianReadable(from: day.gregorian),
-                    gregorianMonthName: day.gregorian.month.en,
+                    gregorianReadable: readableFormatter.string(from: sortDate),
+                    gregorianMonthName: monthNameFormatter.string(from: sortDate),
                     gregorianYear: day.gregorian.year,
                     hijriDay: day.hijri.day,
                     hijriMonth: day.hijri.month.en,
                     hijriYear: day.hijri.year,
                     hijriWeekday: day.hijri.weekday.ar ?? day.hijri.weekday.en,
-                    sortDate: formatter.date(from: day.gregorian.date) ?? .distantPast,
+                    sortDate: sortDate,
                     hijriMonthNumber: day.hijri.month.number
                 )
             }
         }
-    }
-
-    private func formattedGregorianReadable(from gregorian: GregorianDate) -> String {
-        "\(gregorian.day). \(gregorian.month.en) \(gregorian.year)"
     }
 }

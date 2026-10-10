@@ -33,7 +33,7 @@ struct StatisticsView: View {
             .foregroundStyle(Color.orange.opacity(0.95))
             .font(.system(size: 34, weight: .ultraLight, design: .serif))
             .frame(height: 30)
-            
+
             Form {
                 Section("Aktualisierung") {
                     statRow("Letzter Versuch", formatted(stats.lastAttemptAt))
@@ -43,14 +43,14 @@ struct StatisticsView: View {
                     statRow("Letzte Quelle", stats.lastSource ?? "--")
                     statRow("Letzter Fehlertext", stats.lastError ?? "--")
                 }
-                
+
                 Section("Cache") {
                     statRow("Zeitraum", cacheRange)
                     statRow("Gespeicherte Tage", "\(cacheDayCount)")
                     statRow("Letzter Cache-Fetch", formatted(cacheFetchedAt))
                     statRow("Resttage ab heute", remainingCoverageText())
                 }
-                
+
                 Section("Quellen-Zähler") {
                     statRow("Appstart", "\(stats.appStartRefreshCount)")
                     statRow("Manuell", "\(stats.manualRefreshCount)")
@@ -58,24 +58,39 @@ struct StatisticsView: View {
                     statRow("App Active", "\(stats.appActiveRefreshCount)")
                     statRow("Widget Timeline", "\(stats.widgetTimelineRefreshCount)")
                 }
-                
+
                 Section("Gesamtzähler") {
                     statRow("Erfolgreiche Abrufe", "\(stats.successfulFetchCount)")
                     statRow("Fehlgeschlagene Abrufe", "\(stats.failedFetchCount)")
                     statRow("Widget Reloads", "\(stats.widgetReloadCount)")
                     statRow("Timeline Builds", "\(stats.timelineBuildCount)")
                 }
-                
+
                 Section("Aktuelle Einstellungen") {
                     statRow("Ort", settings.address)
                     statRow("Datum", formatted(settings.date))
                     statRow("Methode", settings.method.title)
                 }
-                
+
                 Section("Hinweis") {
                     Text("Sobald nur noch 2 Tage Abdeckung übrig sind, sollte die App den Wochen-Cache erneut laden.")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
+                }
+
+                Section {
+                    // Pushed inside this view's own `NavigationStack` —
+                    // `CachedPrayerTimesContent` never wraps itself in a
+                    // second one, so there's no nested stack. This is now
+                    // the only way to reach it; the standalone
+                    // "Gespeicherte Gebetszeiten" sheet on the Home page
+                    // was removed. Deliberately the very last section on
+                    // this page, below "Hinweis".
+                    NavigationLink {
+                        CachedPrayerTimesContent()
+                    } label: {
+                        Label("Gespeicherte Gebetszeiten", systemImage: "tray.full")
+                    }
                 }
             }
             .scrollContentBackground(.hidden)
@@ -86,7 +101,7 @@ struct StatisticsView: View {
                         reload()
                     }
                 }
-                
+
                 ToolbarItem(placement: .topBarLeading) {
                     Button("Schließen") {
                         dismiss()

@@ -525,8 +525,18 @@ extension IslamicCalendarViewModel {
         nextHoliday(after: referenceDate)?.id == holiday.id
     }
 
+    // Derived from `sortDate` (a real, always-correct `Date`) with a
+    // German formatter, instead of trusting the stored `gregorianReadable`
+    // string verbatim — that field was built from AlAdhan's own English
+    // month name until recently, and anything already cached from before
+    // that fix would otherwise keep showing English month names here
+    // forever, since this page never re-fetches data just because it's
+    // already cached.
     func holidayGregorianText(for holiday: IslamicSpecialDay) -> String {
-        holiday.gregorianReadable
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "de_DE")
+        formatter.dateFormat = "d. MMMM yyyy"
+        return formatter.string(from: holiday.sortDate)
     }
 
     func holidayHijriText(for holiday: IslamicSpecialDay) -> String {

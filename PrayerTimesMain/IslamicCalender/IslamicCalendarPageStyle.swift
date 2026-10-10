@@ -103,10 +103,23 @@ struct IslamicCalendarHeroCard: View {
 /// A titled content card with a small tinted icon badge — exactly
 /// `QiblaInfoSheet.infoCard`'s shape, reused by every calendar sub-page's
 /// sections (color legend, Sunnah-fasting, holiday list, notes, …).
-struct IslamicCalendarSectionCard<Content: View>: View {
+struct IslamicCalendarSectionCard<Content: View, Accessory: View>: View {
     let title: String
     let symbol: String
     @ViewBuilder let content: Content
+    @ViewBuilder let accessory: Accessory
+
+    init(
+        title: String,
+        symbol: String,
+        @ViewBuilder content: () -> Content,
+        @ViewBuilder accessory: () -> Accessory
+    ) {
+        self.title = title
+        self.symbol = symbol
+        self.content = content()
+        self.accessory = accessory()
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -122,6 +135,8 @@ struct IslamicCalendarSectionCard<Content: View>: View {
                     .foregroundStyle(.primary)
 
                 Spacer()
+
+                accessory
             }
 
             content
@@ -129,6 +144,16 @@ struct IslamicCalendarSectionCard<Content: View>: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(18)
         .glassCard(cornerRadius: 22)
+    }
+}
+
+/// Convenience initializer for every existing call site, none of which
+/// need a header accessory — `zakatDueDateCard` (see
+/// `IslamicHolidayOverviewSheet`) is the only one that currently does,
+/// via the full initializer above.
+extension IslamicCalendarSectionCard where Accessory == EmptyView {
+    init(title: String, symbol: String, @ViewBuilder content: () -> Content) {
+        self.init(title: title, symbol: symbol, content: content, accessory: { EmptyView() })
     }
 }
 

@@ -113,34 +113,32 @@ struct IslamicHolidayOverviewSheet: View {
         persistZakatDueDate(isEnabled: isZakatActive)
     }
 
-    /// Setup card: activation toggle, a prominent current-date display
+    /// Setup card: the activation toggle sits in the header, directly
+    /// beside the "Zakat-Stichtag" title (as the card's accessory — see
+    /// `IslamicCalendarSectionCard`), and the current-date display itself
     /// (same icon-badge row shape `holidayRow` uses, for visual consistency
-    /// with the list above), and a compact button right beneath it to pick
-    /// a Gregorian day from a calendar (converted to the Hijri rule above).
-    /// There's no manual Hijri day/month entry anymore — the Gregorian
-    /// calendar picker is the only way to set the rule.
+    /// with the list above) is the single, fully tappable entry point into
+    /// the Gregorian-day picker — there's no separate button anymore, and
+    /// no manual Hijri day/month entry either; the Gregorian calendar
+    /// picker is the only way to set the rule. That picker entry point only
+    /// shows up once the toggle is actually on — while it's off, there's
+    /// nothing to configure yet.
     private var zakatDueDateCard: some View {
-        IslamicCalendarSectionCard(title: "Zakat-Stichtag", symbol: "banknote") {
-            VStack(alignment: .leading, spacing: 16) {
-                Toggle("Zakat-Stichtag aktiv", isOn: zakatEnabledBinding)
-                    .tint(IslamicCalendarPageStyle.accentStrong)
-
-                VStack(alignment: .leading, spacing: 8) {
+        IslamicCalendarSectionCard(
+            title: "Zakat-Stichtag",
+            symbol: "banknote",
+            content: {
+                if isZakatActive {
                     currentZakatDateRow
-
-                    Button {
-                        gregorianDateSelection = Date()
-                        showGregorianDatePicker = true
-                    } label: {
-                        Label("Gregorianischen Tag im Kalender wählen", systemImage: "calendar")
-                            .font(.caption.weight(.semibold))
-                    }
-                    .buttonStyle(.bordered)
-                    .controlSize(.small)
-                    .tint(IslamicCalendarPageStyle.accentStrong)
                 }
+            },
+            accessory: {
+                Toggle("", isOn: zakatEnabledBinding)
+                    .labelsHidden()
+                    .tint(IslamicCalendarPageStyle.accentStrong)
+                    .accessibilityLabel("Zakat-Stichtag aktiv")
             }
-        }
+        )
         .sheet(isPresented: $showGregorianDatePicker) {
             NavigationStack {
                 // A custom month grid instead of the native graphical
@@ -170,32 +168,49 @@ struct IslamicHolidayOverviewSheet: View {
         }
     }
 
+    /// The entire card is the tap target for opening the Gregorian-day
+    /// picker — no separate "Gregorianischen Tag im Kalender wählen"
+    /// button alongside it anymore. A plain `Button` (not `onTapGesture`)
+    /// so it keeps standard button accessibility/hit-testing behavior.
     private var currentZakatDateRow: some View {
-        HStack(spacing: 10) {
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .fill(IslamicCalendarPageStyle.accentGradient)
-                .frame(width: 34, height: 34)
-                .overlay {
-                    Image(systemName: "banknote")
-                        .font(.system(size: 14, weight: .semibold))
-                        .foregroundStyle(.white)
+        Button {
+            gregorianDateSelection = Date()
+            showGregorianDatePicker = true
+        } label: {
+            HStack(spacing: 10) {
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .fill(IslamicCalendarPageStyle.accentGradient)
+                    .frame(width: 34, height: 34)
+                    .overlay {
+                        Image(systemName: "banknote")
+                            .font(.system(size: 14, weight: .semibold))
+                            .foregroundStyle(.white)
+                    }
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Jedes Hijri-Jahr am")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+
+                    Text("\(zakatHijriDay). \(HijriDateFormatting.monthName(zakatHijriMonth))")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(.primary)
                 }
 
-            VStack(alignment: .leading, spacing: 2) {
-                Text("Jedes Hijri-Jahr am")
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
+                Spacer()
 
-                Text("\(zakatHijriDay). \(HijriDateFormatting.monthName(zakatHijriMonth))")
+                Image(systemName: "calendar")
                     .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(.primary)
+                    .foregroundStyle(IslamicCalendarPageStyle.accentStrong)
             }
-
-            Spacer()
+            .padding(.horizontal, 12)
+            .padding(.vertical, 10)
+            .glassBackground(cornerRadius: 16)
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 10)
-        .glassBackground(cornerRadius: 16)
+        .buttonStyle(.plain)
+        .accessibilityLabel(
+            "Jedes Hijri-Jahr am \(zakatHijriDay). \(HijriDateFormatting.monthName(zakatHijriMonth)). Gregorianisches Datum auswählen."
+        )
     }
 
     private var heroCard: some View {
@@ -267,6 +282,29 @@ struct IslamicHolidayOverviewSheet: View {
         .glassCard(cornerRadius: 22)
     }
 
+    /// `mergedVisibleDays` partitioned into runs of entries that land on
+    /// the exact same Gregorian calendar day — so two (or more) events on
+    /// one day render together in a single block instead of as separate,
+    /// visually disconnected rows. `mergedVisibleDays` is already
+    /// chronologically sorted, so same-day entries are always adjacent;
+    /// this only ever merges neighbors, never re-sorts or re-groups
+    /// across the whole list.
+    private var groupedVisibleDays: [[IslamicSpecialDay]] {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = .autoupdatingCurrent
+
+        var groups: [[IslamicSpecialDay]] = []
+        for day in mergedVisibleDays {
+            if let lastFirst = groups.last?.first,
+               calendar.isDate(lastFirst.sortDate, inSameDayAs: day.sortDate) {
+                groups[groups.count - 1].append(day)
+            } else {
+                groups.append([day])
+            }
+        }
+        return groups
+    }
+
     private var holidaysCard: some View {
         IslamicCalendarSectionCard(title: "Kommende Ereignisse", symbol: "calendar") {
             if mergedVisibleDays.isEmpty {
@@ -275,12 +313,74 @@ struct IslamicHolidayOverviewSheet: View {
                     .foregroundStyle(.secondary)
             } else {
                 VStack(spacing: 8) {
-                    ForEach(mergedVisibleDays) { holiday in
-                        holidayRow(holiday)
+                    ForEach(Array(groupedVisibleDays.enumerated()), id: \.offset) { _, group in
+                        if group.count == 1 {
+                            holidayRow(group[0])
+                        } else {
+                            holidayGroupBlock(group)
+                        }
                     }
                 }
             }
         }
+    }
+
+    /// Two or more special days sharing one Gregorian calendar day,
+    /// rendered as a single row — same shape as `holidayRow`, just with
+    /// every event's title joined on one line ("Arafa, Hajj") and one
+    /// shared Gregorian/Hijri date line underneath, instead of stacking
+    /// each event's own title/date block vertically.
+    private func holidayGroupBlock(_ group: [IslamicSpecialDay]) -> some View {
+        let isFeatured = group.contains { $0.id == featuredHoliday?.id }
+        let combinedTitle = group.map(\.title).joined(separator: ", ")
+
+        return HStack(alignment: .center, spacing: 10) {
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(isFeatured ? AnyShapeStyle(IslamicCalendarPageStyle.accentGradient) : AnyShapeStyle(IslamicCalendarPageStyle.accentTint))
+                .frame(width: 34, height: 34)
+                .overlay {
+                    Image(systemName: "sparkles")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(isFeatured ? .white : IslamicCalendarPageStyle.accentStrong)
+                }
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text(combinedTitle)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(isFeatured ? IslamicCalendarPageStyle.accentStrong : .primary)
+                    .lineLimit(1)
+
+                HStack(spacing: 4) {
+                    Text(viewModel.holidayGregorianText(for: group[0]))
+                        .font(.caption2.weight(.medium))
+                        .foregroundStyle(.secondary.opacity(0.9))
+                        .lineLimit(1)
+
+                    Text("|")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary.opacity(0.5))
+
+                    Text(viewModel.holidayHijriText(for: group[0]))
+                        .font(.caption2)
+                        .foregroundStyle(.secondary.opacity(0.8))
+                        .lineLimit(1)
+                }
+            }
+
+            Spacer()
+
+            if isFeatured {
+                Text("Nächstes")
+                    .font(.caption2.bold())
+                    .foregroundStyle(IslamicCalendarPageStyle.accentStrong)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 6)
+                    .glassBackground(cornerRadius: 10)
+            }
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
+        .glassBackground(cornerRadius: 16)
     }
 
     private func holidayRow(_ holiday: IslamicSpecialDay) -> some View {
@@ -308,6 +408,10 @@ struct IslamicHolidayOverviewSheet: View {
                         .font(.caption2.weight(.medium))
                         .foregroundStyle(.secondary.opacity(0.9))
                         .lineLimit(1)
+
+                    Text("|")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary.opacity(0.5))
 
                     Text(viewModel.holidayHijriText(for: holiday))
                         .font(.caption2)
@@ -465,15 +569,49 @@ private struct GregorianHijriCalendarGrid: View {
         return formatter.string(from: displayedMonth)
     }
 
-    /// The Hijri month/year for the currently displayed *Gregorian* month
-    /// (taken from its first day), shown right under the Gregorian header
+    /// The Hijri month(s)/year(s) actually spanned by the currently
+    /// displayed *Gregorian* month, shown right under the Gregorian header
     /// so a Hijri-minded due date is still easy to place at a glance even
-    /// though the grid itself navigates by Gregorian month.
+    /// though the grid itself navigates by Gregorian month. A Gregorian
+    /// month almost always spans two Hijri months (~29–30 days each), so
+    /// this lists every distinct one actually present ("Rajab 1448 /
+    /// Schaʿban 1448"), not just the first day's — mirroring
+    /// `IslamicCalendarViewModel.hijriMonthSummary(for:)`'s exact
+    /// behavior on the main calendar tab (this grid has no access to that
+    /// view model, so the same logic is reproduced here against the
+    /// shared `HijriDateFormatting` basis instead of duplicating state).
     private var hijriMonthHeaderText: String {
+        guard let monthInterval = calendar.dateInterval(of: .month, for: displayedMonth) else {
+            return ""
+        }
+
+        struct HijriMonthKey: Hashable {
+            let year: Int
+            let month: Int
+        }
+
         let hijriCalendar = HijriDateFormatting.calendar()
-        let comps = hijriCalendar.dateComponents([.month, .year], from: displayedMonth)
-        guard let month = comps.month, let year = comps.year else { return "" }
-        return "\(HijriDateFormatting.monthName(month)) \(year)"
+        var current = monthInterval.start
+        var orderedKeys: [HijriMonthKey] = []
+        var seen = Set<HijriMonthKey>()
+
+        while current < monthInterval.end {
+            let comps = hijriCalendar.dateComponents([.month, .year], from: current)
+            if let month = comps.month, let year = comps.year {
+                let key = HijriMonthKey(year: year, month: month)
+                if !seen.contains(key) {
+                    seen.insert(key)
+                    orderedKeys.append(key)
+                }
+            }
+
+            guard let next = calendar.date(byAdding: .day, value: 1, to: current) else { break }
+            current = next
+        }
+
+        return orderedKeys
+            .map { "\(HijriDateFormatting.monthName($0.month)) \($0.year)" }
+            .joined(separator: " / ")
     }
 
     private var daysInGrid: [Date] {

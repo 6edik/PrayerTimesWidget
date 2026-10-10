@@ -24,7 +24,11 @@ struct IslamicCalendarDayCell: View {
                         .minimumScaleFactor(0.9)
                 }
             }
-            .frame(maxWidth: .infinity)
+            // Deliberately NOT `.frame(maxWidth: .infinity)` here — the
+            // today/selected badge below hugs just this text block (sized
+            // via padding, not a hardcoded frame), then sits centered in
+            // the full-width cell by the outer VStack's default alignment.
+            .padding(.horizontal, 6)
             .padding(.vertical, 4)
             .background(todayBackground)
 
@@ -116,20 +120,24 @@ struct IslamicCalendarDayCell: View {
             .frame(width: 5, height: 5)
     }
 
+    // No hardcoded `.frame(width:height:)` — that previously forced a
+    // 54×58 box regardless of the cell's own size (the whole cell is only
+    // 52pt tall), so the "today" ring and the "selected" fill both
+    // overflowed the cell and bled into neighboring days. Sized by the
+    // padding on the text block above instead, so it hugs just the day
+    // number (and Hijri day, if shown) with a little breathing room.
     @ViewBuilder
     private var todayBackground: some View {
         if item.isToday {
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
                 .fill(Color.green.opacity(0.14))
                 .overlay(
-                    RoundedRectangle(cornerRadius: 18, style: .continuous)
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
                         .stroke(Color.green.opacity(0.35), lineWidth: 1)
                 )
-                .frame(width: 54, height: 58)
         } else if item.isSelected {
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
                 .fill(Color.primary.opacity(0.06))
-                .frame(width: 54, height: 58)
         } else {
             Color.clear
         }

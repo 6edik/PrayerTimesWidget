@@ -6,95 +6,91 @@ import SwiftUI
 /// the widget) and the raw, unadjusted API values. Opening this view or
 /// switching between days never triggers a network request and never
 /// modifies the cache — `viewModel.load()` only reads local UserDefaults.
-struct CachedPrayerTimesView: View {
-    @Environment(\.dismiss) private var dismiss
+///
+/// No `NavigationStack` and no "Schließen" button of its own — this is now
+/// only ever pushed inside `StatisticsView`'s own `NavigationStack` (see
+/// its "Gespeicherte Gebetszeiten" button), never presented as its own
+/// standalone modal sheet, so it relies on the ambient navigation bar and
+/// back button instead.
+struct CachedPrayerTimesContent: View {
     @StateObject private var viewModel = CachedPrayerTimesViewModel()
     @State private var showRawTimes = false
 
     var body: some View {
-        NavigationStack {
-            AppPageHeader(title: "Gespeicherte Gebetszeiten")
-                .fontDesign(nil)
+        Form {
+            if viewModel.hasCachedData {
+                Section("Cache-Details") {
+                    detailRow("Ort", viewModel.cacheLocationDisplay)
 
-            Form {
-                if viewModel.hasCachedData {
-                    Section("Cache-Details") {
-                        detailRow("Ort", viewModel.cacheLocationDisplay)
-
-                        if let coordinateDisplay = viewModel.cacheCoordinateDisplay {
-                            Text(coordinateDisplay)
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
-
-                        detailRow("Methode", viewModel.cacheMethodDisplay)
-                        detailRow("Gespeicherte Tage", "\(viewModel.days.count)")
-                        detailRow("Letzter erfolgreicher Abruf", formattedFetchedAt)
+                    if let coordinateDisplay = viewModel.cacheCoordinateDisplay {
+                        Text(coordinateDisplay)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
                     }
 
-                    if let notice = viewModel.noticeMessage {
-                        Section {
-                            Label(notice, systemImage: "exclamationmark.triangle.fill")
-                                .font(.footnote)
-                                .foregroundStyle(.orange)
-                        }
-                    }
+                    detailRow("Methode", viewModel.cacheMethodDisplay)
+                    detailRow("Gespeicherte Tage", "\(viewModel.days.count)")
+                    detailRow("Letzter erfolgreicher Abruf", formattedFetchedAt)
+                }
 
+                if let notice = viewModel.noticeMessage {
                     Section {
-                        Toggle("Rohzeiten ohne Justierung anzeigen", isOn: $showRawTimes)
-                    } footer: {
-                        Text(
-                            showRawTimes
-                            ? "Zeigt die unveränderten, gespeicherten API-Zeiten ohne deine persönliche Minuten-Justierung."
-                            : "Zeigt die Zeiten inklusive deiner persönlichen Minuten-Justierung, konsistent mit Startseite und Widget."
-                        )
+                        Label(notice, systemImage: "exclamationmark.triangle.fill")
+                            .font(.footnote)
+                            .foregroundStyle(.orange)
                     }
+                }
 
-                    Section("Gespeicherte Tage") {
-                        ForEach(viewModel.days) { day in
-                            NavigationLink {
-                                CachedPrayerDayDetailView(
-                                    day: day,
-                                    displayTimes: viewModel.displayTimes(for: day, showRaw: showRawTimes),
-                                    dayOffsets: viewModel.dayOffsets(for: day),
-                                    showRaw: showRawTimes
-                                )
-                            } label: {
-                                dayRow(day)
-                            }
+                Section {
+                    Toggle("Rohzeiten ohne Justierung anzeigen", isOn: $showRawTimes)
+                } footer: {
+                    Text(
+                        showRawTimes
+                        ? "Zeigt die unveränderten, gespeicherten API-Zeiten ohne deine persönliche Minuten-Justierung."
+                        : "Zeigt die Zeiten inklusive deiner persönlichen Minuten-Justierung, konsistent mit Startseite und Widget."
+                    )
+                }
+
+                Section("Gespeicherte Tage") {
+                    ForEach(viewModel.days) { day in
+                        NavigationLink {
+                            CachedPrayerDayDetailView(
+                                day: day,
+                                displayTimes: viewModel.displayTimes(for: day, showRaw: showRawTimes),
+                                dayOffsets: viewModel.dayOffsets(for: day),
+                                showRaw: showRawTimes
+                            )
+                        } label: {
+                            dayRow(day)
                         }
                     }
-                } else {
-                    Section {
-                        emptyState
-                    }
+                }
+            } else {
+                Section {
+                    emptyState
                 }
             }
-            .scrollContentBackground(.hidden)
-            .background(Color("AppBackground").ignoresSafeArea())
-            .toolbar {
-                ToolbarItem(placement: .topBarLeading) {
-                    Button("Schließen") {
-                        dismiss()
-                    }
+        }
+        .scrollContentBackground(.hidden)
+        .background(Color("AppBackground").ignoresSafeArea())
+        .navigationTitle("Gespeicherte Gebetszeiten")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                // Re-reads the local cache from disk — never a network
+                // fetch — so this view reflects a refresh performed
+                // elsewhere (Home, widget, background task) while this
+                // page was already open.
+                Button {
+                    viewModel.load()
+                } label: {
+                    Image(systemName: "arrow.clockwise")
                 }
-
-                ToolbarItem(placement: .topBarTrailing) {
-                    // Re-reads the local cache from disk — never a network
-                    // fetch — so this view reflects a refresh performed
-                    // elsewhere (Home, widget, background task) while this
-                    // sheet was already open.
-                    Button {
-                        viewModel.load()
-                    } label: {
-                        Image(systemName: "arrow.clockwise")
-                    }
-                    .accessibilityLabel("Aus dem lokalen Cache neu laden")
-                }
+                .accessibilityLabel("Aus dem lokalen Cache neu laden")
             }
-            .task {
-                viewModel.load()
-            }
+        }
+        .task {
+            viewModel.load()
         }
     }
 
@@ -242,5 +238,7 @@ private struct CachedPrayerDayDetailView: View {
 }
 
 #Preview {
-    CachedPrayerTimesView()
+    NavigationStack {
+        CachedPrayerTimesContent()
+    }
 }
