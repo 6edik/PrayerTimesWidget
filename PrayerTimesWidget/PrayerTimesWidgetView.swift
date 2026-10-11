@@ -55,42 +55,42 @@ struct PrayerTimesWidgetView: View {
 
             VStack(spacing: 4) {
                 smallPrayerRow(
-                    icon: "sparkles",
+                    icon: PrayerStatusIcon.symbolName(forCanonicalRow: "Fajr"),
                     title: "Fajr",
                     time: entry.times.fajr,
                     isActive: highlights.primary == "Fajr"
                 )
 
                 smallPrayerRow(
-                    icon: "sunrise.fill",
+                    icon: PrayerStatusIcon.symbolName(forCanonicalRow: "Shuruk"),
                     title: "Sunrise",
                     time: entry.times.shuruk,
                     isActive: highlights.primary == "Shuruk"
                 )
 
                 smallPrayerRow(
-                    icon: "sun.max.fill",
+                    icon: PrayerStatusIcon.symbolName(forCanonicalRow: "Dhuhr"),
                     title: dhuhrTitle,
                     time: entry.times.dhuhr,
                     isActive: highlights.primary == "Dhuhr"
                 )
 
                 smallPrayerRow(
-                    icon: "cloud.sun.fill",
+                    icon: PrayerStatusIcon.symbolName(forCanonicalRow: "Asr"),
                     title: "Asr",
                     time: entry.times.asr,
                     isActive: highlights.primary == "Asr"
                 )
 
                 smallPrayerRow(
-                    icon: "sunset.fill",
+                    icon: PrayerStatusIcon.symbolName(forCanonicalRow: "Maghrib"),
                     title: "Maghrib",
                     time: entry.times.maghrib,
                     isActive: highlights.primary == "Maghrib"
                 )
 
                 smallPrayerRow(
-                    icon: "moon.stars.fill",
+                    icon: PrayerStatusIcon.symbolName(forCanonicalRow: "Isha"),
                     title: "Isha",
                     time: entry.times.isha,
                     isActive: highlights.primary == "Isha"
@@ -107,16 +107,21 @@ struct PrayerTimesWidgetView: View {
         time: String,
         isActive: Bool
     ) -> some View {
-        HStack(spacing: 0) {
+        HStack(spacing: 4) {
             Image(systemName: icon)
                 .font(.system(size: 10, weight: .medium))
                 .frame(width: 16, alignment: .leading)
                 .foregroundStyle(isActive ? .white : Color.white.opacity(0.72))
 
-            Spacer()
-
+            // No `Spacer()` here anymore — it was eating into the title's
+            // own width, which is exactly what caused "Maghrib" (the
+            // longest prayer name) to truncate to "Magh…" once it became
+            // bold (the active row). The title already starts right
+            // after the icon via its own leading-aligned flexible frame.
             Text(title)
                 .font(.system(size: 13, weight: isActive ? .semibold : .regular, design: .serif))
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .foregroundStyle(isActive ? .white : Color.white.opacity(0.72))
 
@@ -168,7 +173,35 @@ struct PrayerTimesWidgetView: View {
         return HStack(spacing: 14) {
             if let window {
                 let highlights = todaysHighlightState(window: window)
-
+                // `status` refines the generic Shuruk-to-Dhuhr window into
+                // "Karāha" or "Duha" (never shown as a plain, label-less
+                // "Shuruk" span) using the exact same
+                // `CurrentPrayerStatusCalculator` the Gebetszeiten page
+                // uses — falls back to the raw obligatory-prayer window
+                // whenever the refined status can't be resolved (e.g. the
+                // sunrise-Karāha approximation is suppressed), never a
+                // blank display.
+                let status = currentStatus(window: window)
+                let isObligatory = status.map { CurrentPrayerStatusDisplay.isObligatory($0.kind) } ?? true
+                let isKaraha = status.map { CurrentPrayerStatusDisplay.isKaraha($0.kind) } ?? false
+                let displayStart = status?.start ?? window.start
+                let displayEnd = status?.end ?? window.end
+                let mainLabel = status.map { CurrentPrayerStatusDisplay.label(for: $0.kind, dhuhrTitle: dhuhrTitle) } ?? displayName(for: window.currentName)
+                let combinedLabel: String = {
+                    guard let additionalKind = status?.additionalKind else { return mainLabel }
+                    return "\(mainLabel) · \(CurrentPrayerStatusDisplay.label(for: additionalKind, dhuhrTitle: dhuhrTitle))"
+                }()
+                // After the sunrise Karāha, the next relevant state is
+                // Duha; after Duha itself, it's the Karāha vor Dhuhr —
+                // every other state's "next" stays the actual next
+                // obligatory prayer, exactly as before.
+                let nextLabel: String = {
+                    switch status?.kind {
+                    case .sunriseKaraha: return "Duha"
+                    case .duha: return "Karāha"
+                    default: return displayName(for: window.nextName)
+                    }
+                }()
                 VStack(alignment: .leading, spacing: 10) {
                     HStack(spacing: 0) {
                         Text(smallGregorianHeader())
@@ -185,20 +218,36 @@ struct PrayerTimesWidgetView: View {
                     .lineLimit(1)
 
                     VStack(alignment: .leading, spacing: 2) {
-                        Text("Aktuell")
-                            .font(.system(size: 11, weight: .medium, design: .serif))
-                            .foregroundStyle(Color.white.opacity(0.65))
+                        // The literal "Aktuell" label is gone — Duha is
+                        // never worded as if it were an obligatory prayer;
+                        // only a subdued "Freiwillig" marker takes its
+                        // place. A Karāha window gets neither this label
+                        // (it isn't a voluntary-prayer opportunity) nor the
+                        // orange "current prayer" accent.
+                        if !isObligatory && !isKaraha {
+                            Text("Freiwillig")
+                                .font(.system(size: 10, weight: .semibold, design: .serif))
+                                .foregroundStyle(Color.orange.opacity(0.85))
+                        }
 
                         HStack(spacing: 5) {
-                            Text(displayName(for: window.currentName))
+                            // No `.frame(maxWidth: .infinity)` on either
+                            // Text here: that modifier on the time below
+                            // used to claim space ahead of the label,
+                            // which is exactly what truncated "Maghrib"
+                            // (the longest prayer name) to "Magh…" once it
+                            // became bold (the active status). Both Texts
+                            // now just take their own natural width.
+                            Text(combinedLabel)
                                 .font(.system(size: 15, weight: .semibold, design: .serif))
+                                .lineLimit(1)
+                                .minimumScaleFactor(0.8)
                                 .foregroundStyle(.white)
 
-                            Text(window.currentTime)
+                            Text(clockText(displayStart, timezoneIdentifier: window.timezoneIdentifier))
                                 .font(.system(size: 18, weight: .bold, design: .serif))
                                 .monospacedDigit()
                                 .foregroundStyle(.white)
-                                .frame(maxWidth: .infinity, alignment: .trailing)
                         }
                     }
 
@@ -210,14 +259,14 @@ struct PrayerTimesWidgetView: View {
 
                             Spacer(minLength: 25)
 
-                            Text(window.end, style: .timer)
+                            Text(displayEnd, style: .timer)
                                 .font(.system(size: 18, weight: .bold, design: .serif))
                                 .monospacedDigit()
                                 .foregroundStyle(Color.orange.opacity(0.95))
                         }
                         .frame(maxWidth: .infinity)
 
-                        Text("bis \(displayName(for: window.nextName))")
+                        Text("bis \(nextLabel)")
                             .font(.system(size: 11, weight: .medium, design: .serif))
                             .foregroundStyle(Color.white.opacity(0.68))
 
@@ -231,8 +280,11 @@ struct PrayerTimesWidgetView: View {
                         // bar actually advances continuously through the
                         // whole window — not just during whichever single
                         // window happened to be active the moment the
-                        // timeline was last built.
-                        ProgressView(timerInterval: window.start...window.end, countsDown: false) {
+                        // timeline was last built. Uses the same refined
+                        // `displayStart...displayEnd` span as the countdown
+                        // above (Karāha/Duha's own bounds when active),
+                        // never the raw Shuruk-to-Dhuhr span.
+                        ProgressView(timerInterval: displayStart...displayEnd, countsDown: false) {
                             EmptyView()
                         } currentValueLabel: {
                             EmptyView()
@@ -241,9 +293,9 @@ struct PrayerTimesWidgetView: View {
                         .frame(height: 8)
 
                         HStack {
-                            Text(displayName(for: window.currentName))
+                            Text(mainLabel)
                             Spacer()
-                            Text(displayName(for: window.nextName))
+                            Text(nextLabel)
                         }
                         .font(.system(size: 10, weight: .medium, design: .serif))
                         .foregroundStyle(Color.white.opacity(0.48))
@@ -268,7 +320,13 @@ struct PrayerTimesWidgetView: View {
                                 .minimumScaleFactor(0.8)
                         }
 
-                        if let qiratLabel = activeQiratLabel() {
+                        // Any active Karāha window is already shown as the
+                        // main status above (`combinedLabel`, with its own
+                        // "vor Dhuhr"/"vor Maghrib"/"nach Shuruk"
+                        // qualifier) — never the exact same information
+                        // twice here.
+                        let isKarahaStatus = status.map { CurrentPrayerStatusDisplay.isKaraha($0.kind) } ?? false
+                        if let qiratLabel = activeQiratLabel(), !isKarahaStatus {
                             Text(qiratLabel)
                                 .font(.system(size: 9, weight: .semibold, design: .serif))
                                 .foregroundStyle(Color.orange.opacity(0.9))
@@ -396,14 +454,14 @@ struct PrayerTimesWidgetView: View {
         return AnyView(
             ViewThatFits(in: .horizontal) {
                 inlineCountdownText(
-                    symbol: symbolForPrayer(window.currentName),
+                    symbol: PrayerStatusIcon.symbolName(forCanonicalRow: window.currentName),
                     current: shortLabel(window.currentName),
                     end: window.end,
                     next: shortLabel(window.nextName)
                 )
 
                 inlineCompactCountdownText(
-                    symbol: symbolForPrayer(window.currentName),
+                    symbol: PrayerStatusIcon.symbolName(forCanonicalRow: window.currentName),
                     current: shortLabel(window.currentName),
                     end: window.end
                 )
@@ -459,18 +517,6 @@ struct PrayerTimesWidgetView: View {
                 .font(.system(.caption2, design: .serif))
                 .fontWeight(.bold)
                 .monospacedDigit()
-        }
-    }
-
-    private func symbolForPrayer(_ value: String) -> String {
-        switch value {
-        case "Fajr": return "sparkles"
-        case "Shuruk": return "sunrise.fill"
-        case "Dhuhr": return "sun.max.fill"
-        case "Asr": return "cloud.sun.fill"
-        case "Maghrib": return "sunset.fill"
-        case "Isha": return "moon.stars.fill"
-        default: return "clock.fill"
         }
     }
 
@@ -535,12 +581,12 @@ struct PrayerTimesWidgetView: View {
             }
 
             HStack(spacing: 0) {
-                prayerLockTile(symbol: "sparkles", short: "FJR", time: entry.times.fajr, showDivider: true)
-                prayerLockTile(symbol: "sunrise.fill", short: "SRK", time: entry.times.shuruk, showDivider: true)
-                prayerLockTile(symbol: "sun.max.fill", short: dhuhrShortTitle, time: entry.times.dhuhr, showDivider: true)
-                prayerLockTile(symbol: "cloud.sun.fill", short: "ASR", time: entry.times.asr, showDivider: true)
-                prayerLockTile(symbol: "sunset.fill", short: "MGB", time: entry.times.maghrib, showDivider: true)
-                prayerLockTile(symbol: "moon.stars.fill", short: "ISH", time: entry.times.isha, showDivider: false)
+                prayerLockTile(symbol: PrayerStatusIcon.symbolName(forCanonicalRow: "Fajr"), short: "FJR", time: entry.times.fajr, showDivider: true)
+                prayerLockTile(symbol: PrayerStatusIcon.symbolName(forCanonicalRow: "Shuruk"), short: "SRK", time: entry.times.shuruk, showDivider: true)
+                prayerLockTile(symbol: PrayerStatusIcon.symbolName(forCanonicalRow: "Dhuhr"), short: dhuhrShortTitle, time: entry.times.dhuhr, showDivider: true)
+                prayerLockTile(symbol: PrayerStatusIcon.symbolName(forCanonicalRow: "Asr"), short: "ASR", time: entry.times.asr, showDivider: true)
+                prayerLockTile(symbol: PrayerStatusIcon.symbolName(forCanonicalRow: "Maghrib"), short: "MGB", time: entry.times.maghrib, showDivider: true)
+                prayerLockTile(symbol: PrayerStatusIcon.symbolName(forCanonicalRow: "Isha"), short: "ISH", time: entry.times.isha, showDivider: false)
             }
             .frame(maxWidth: .infinity)
 
@@ -609,6 +655,9 @@ struct PrayerTimesWidgetView: View {
         if let window = windows.sunriseKaraha, entry.date >= window.start, entry.date < window.end {
             return "Karāha (Sonnenaufgang)"
         }
+        if let window = windows.preDhuhrKaraha, entry.date >= window.start, entry.date < window.end {
+            return "Karāha (vor Dhuhr)"
+        }
         if let window = windows.lateMaghribKaraha, entry.date >= window.start, entry.date < window.end {
             return "Karāha (vor Maghrib)"
         }
@@ -647,6 +696,36 @@ struct PrayerTimesWidgetView: View {
             todayTimes: todayAdjusted,
             previousDayTimes: previousAdjusted,
             nextDayTimes: nextAdjusted
+        )
+    }
+
+    /// Refines `window` into the Karāha/Duha/last-third-aware status the
+    /// medium widget's big tile displays — the exact same
+    /// `CurrentPrayerStatusCalculator` the Gebetszeiten page uses, fed
+    /// from data already carried on the entry (no extra App-Group read
+    /// beyond what `activeQiratLabel()`/`lastThirdOfNightWindow()` already
+    /// perform elsewhere in this view). `nil` whenever none of the
+    /// underlying windows are resolvable or active — callers fall back to
+    /// `window` itself.
+    private func currentStatus(window: PrayerWindowResolver.Window) -> CurrentPrayerStatusCalculator.Status? {
+        let autoSettings = settingsStore.loadAutoSettings()
+        let qiratWindows = QiratTimeResolver.windows(now: entry.date, store: store, settings: autoSettings)
+        let todayAdjusted = AdjustedPrayerTimes(times: entry.times, dayOffsets: entry.dayOffsets)
+        let duhaWindow = DuhaCalculator.resolve(
+            now: entry.date,
+            todayTimes: todayAdjusted,
+            sunriseKarahaWindow: qiratWindows.sunriseKaraha,
+            preDhuhrKarahaWindow: qiratWindows.preDhuhrKaraha
+        )
+
+        return CurrentPrayerStatusCalculator.resolve(
+            now: entry.date,
+            window: window,
+            duhaWindow: duhaWindow,
+            sunriseKarahaWindow: qiratWindows.sunriseKaraha,
+            preDhuhrKarahaWindow: qiratWindows.preDhuhrKaraha,
+            preMaghribKarahaWindow: qiratWindows.lateMaghribKaraha,
+            lastThirdWindow: lastThirdOfNightWindow()
         )
     }
 

@@ -128,7 +128,11 @@ struct Provider: TimelineProvider {
         // instants, so the widget's "active now" indicator flips exactly
         // on time without periodic ticks.
         let qiratWindows = QiratTimeResolver.windows(now: now, store: store, settings: settings)
-        for boundary in [qiratWindows.sunriseKaraha?.start, qiratWindows.sunriseKaraha?.end, qiratWindows.lateMaghribKaraha?.start, qiratWindows.lateMaghribKaraha?.end] {
+        for boundary in [
+            qiratWindows.sunriseKaraha?.start, qiratWindows.sunriseKaraha?.end,
+            qiratWindows.preDhuhrKaraha?.start, qiratWindows.preDhuhrKaraha?.end,
+            qiratWindows.lateMaghribKaraha?.start, qiratWindows.lateMaghribKaraha?.end
+        ] {
             if let boundary, boundary > now {
                 dates.insert(normalizedTimelineDate(boundary))
             }

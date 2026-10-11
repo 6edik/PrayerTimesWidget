@@ -56,12 +56,29 @@ struct IslamicCalendarView: View {
                 AppPageHeader(title: "Islamischer Kalender")
 
                 VStack(spacing: 6) {
-                    Text(formattedGregorian(selectedDate))
-                        .font(.subheadline)
+                    // Gregorian/Hijri side by side with a "•" separator —
+                    // same layout the Gebetszeiten page uses for its own
+                    // date line.
+                    HStack(spacing: 8) {
+                        Text(formattedGregorian(selectedDate))
+                        Text("•")
+                        Text(viewModel.hijriDisplayText(for: selectedDate))
+                    }
+                    .font(.subheadline)
 
-                    Text(viewModel.hijriDisplayText(for: selectedDate))
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
+                    // Weekday in German and Arabic, styled exactly like
+                    // the Gebetszeiten page's own weekday row (secondary,
+                    // "•"-separated) — computed locally from `selectedDate`
+                    // rather than AlAdhan's English weekday string, so it
+                    // works for any day browsed in this calendar, not just
+                    // "today".
+                    HStack(spacing: 8) {
+                        Text(germanWeekday(selectedDate))
+                        Text("•")
+                        Text(arabicWeekday(selectedDate))
+                    }
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
 
                     let count = viewModel.allEventsForDay(selectedDate).count
                     Text(
@@ -234,6 +251,22 @@ struct IslamicCalendarView: View {
         formatter.locale = Locale(identifier: "de_DE")
         formatter.calendar = gregorianCalendar
         formatter.dateStyle = .long
+        return formatter.string(from: date)
+    }
+
+    private func germanWeekday(_ date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "de_DE")
+        formatter.calendar = gregorianCalendar
+        formatter.dateFormat = "EEEE"
+        return formatter.string(from: date)
+    }
+
+    private func arabicWeekday(_ date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "ar")
+        formatter.calendar = gregorianCalendar
+        formatter.dateFormat = "EEEE"
         return formatter.string(from: date)
     }
 

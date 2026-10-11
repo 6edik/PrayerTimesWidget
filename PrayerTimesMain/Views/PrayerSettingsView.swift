@@ -258,6 +258,19 @@ struct PrayerSettingsView: View {
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                     }
+
+                    // The timezone actually used by the current prayer-time
+                    // calculation (today's cached AlAdhan response for the
+                    // configured location) — never a hardcoded string, and
+                    // never a second, independent timezone source. Moved
+                    // here from the Gebetszeiten page, which no longer
+                    // shows it separately.
+                    HStack {
+                        Text("Zeitzone")
+                        Spacer()
+                        Text(viewModel.todayTimes?.timezone ?? "–")
+                            .foregroundStyle(.secondary)
+                    }
                 }
 
                 Section("Justierung") {

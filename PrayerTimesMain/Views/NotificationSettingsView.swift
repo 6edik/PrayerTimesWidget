@@ -29,11 +29,14 @@ struct NotificationSettingsView: View {
                 Section("Gebete") {
                     ForEach(PrayerNotificationKind.allCases) { kind in
                         Toggle(kind.displayName, isOn: bindingForPrayer(kind).isEnabled)
+                        if kind == .fajr {
+                            Toggle("Duha", isOn: bindingForDuha().isEnabled)
+                        }
                     }
                 }
 
                 Section("Karāha") {
-                    Toggle("Sonnenaufgang & vor Maghrib (Näherung)", isOn: bindingForQirat().isEnabled)
+                    Toggle("Sonnenaufgang, vor Dhuhr & vor Maghrib (Näherung)", isOn: bindingForQirat().isEnabled)
                 }
 
                 Section("Freiwilliges Fasten") {
@@ -224,6 +227,21 @@ struct NotificationSettingsView: View {
         )
     }
 
+    private func bindingForDuha() -> Binding<DuhaNotificationSetting> {
+        Binding(
+            get: { settings.duha },
+            set: { newValue in
+                let wasEnabled = settings.duha.isEnabled
+                settings.duha = newValue
+                persistAndReschedule()
+
+                if newValue.isEnabled, !wasEnabled {
+                    Task { await requestPermissionIfNeeded() }
+                }
+            }
+        )
+    }
+
     // Only reaches the system prompt once, on the transition to enabled —
     // never automatically on appear.
     private func requestPermissionIfNeeded() async {
@@ -395,10 +413,17 @@ private struct NotificationInfoSheet: View {
                 .foregroundStyle(.secondary)
 
                 Section("Karāha") {
-                    Text("Erinnert zu Beginn zweier täglicher Zeitfenster: Sonnenaufgangs-Karāha ab Shuruk (ungefähr 15–20 Minuten), und einer Näherung kurz vor Maghrib.")
+                    Text("Erinnert zu Beginn dreier täglicher Zeitfenster: Sonnenaufgangs-Karāha ab Shuruk (ungefähr 15–20 Minuten), einer kurzen Näherung vor Dhuhr, und einer Näherung kurz vor Maghrib.")
                     Text("„Karāha\" bezeichnet hier Zeitfenster, die nach überlieferter Auffassung für freiwillige Gebete ungünstig sind. Die fünf Pflichtgebete sind davon nicht betroffen.")
                     Text("Die Sonnenaufgangs-Karāha beginnt exakt mit Shuruk, nie mit Fajr. Das ist eine andere Zeit als die separate hanafitische Einschränkung für freiwillige Gebete zwischen Fajr und Sonnenaufgang, die hier nicht als Benachrichtigung angeboten wird.")
-                    Text("Das Fenster vor Maghrib beginnt NICHT mit Asr – Asr bleibt bis Maghrib gültig. Beide Zeitfenster-Enden sind einstellbare Näherungswerte, keine exakten Grenzen, da keine orts- und tagesgenaue Quelle für den exakten Beginn dieser Phasen vorliegt.")
+                    Text("Das Fenster vor Dhuhr endet exakt mit Dhuhrs Beginn. Das Fenster vor Maghrib beginnt NICHT mit Asr – Asr bleibt bis Maghrib gültig. Alle drei Zeitfenster-Enden/-Beginne sind einstellbare Näherungswerte, keine exakten Grenzen, da keine orts- und tagesgenaue Quelle für den exakten Beginn dieser Phasen vorliegt.")
+                }
+                .font(.caption)
+                .foregroundStyle(.secondary)
+
+                Section("Duha") {
+                    Text("Erinnert einmal täglich genau zu Beginn der Duha-Zeit – also zum Ende der Sonnenaufgangs-Karāha. Duha ist ein freiwilliges Gebet, kein Pflichtgebet.")
+                    Text("Es wird nie während der Sonnenaufgangs-Karāha und nie nach Beginn der Karāha vor Dhuhr erinnert.")
                 }
                 .font(.caption)
                 .foregroundStyle(.secondary)

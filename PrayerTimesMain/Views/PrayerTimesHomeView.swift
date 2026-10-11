@@ -48,6 +48,16 @@ struct PrayerTimesHomeView: View {
     // implausible latitude).
     @State private var asrKarahaWindow: QiratTimeResolver.ApproximateWindow?
     @State private var sunriseKarahaWindow: QiratTimeResolver.ApproximateWindow?
+    // Karāha vor Dhuhr: the short window that separates Duha's own end
+    // from Dhuhr's own start (see `QiratTimeResolver`'s doc comment) —
+    // shown expandable on the Dhuhr tile, and also feeds `duhaWindow`
+    // below and the "Aktueller Status" section.
+    @State private var preDhuhrKarahaWindow: QiratTimeResolver.ApproximateWindow?
+    // Duha never gets its own tile/row (see `CurrentPrayerStatusCalculator`
+    // doc) — only feeds the "Aktueller Status" section below. Always
+    // derived from `sunriseKarahaWindow.end`/`preDhuhrKarahaWindow.start`,
+    // never a second Karāha computation (see `DuhaCalculator`).
+    @State private var duhaWindow: DuhaCalculator.Window?
 
     // At most one tile's detail is ever open at once — set to one of
     // `canonicalRowNames` ("Isha", "Asr" or "Shuruk" in practice, the only
@@ -107,48 +117,44 @@ struct PrayerTimesHomeView: View {
         return name
     }
 
+    /// The live "Aktueller Status" — current obligatory prayer, sunrise
+    /// Karāha, Duha, or last third of the night, with precedence exactly
+    /// as `CurrentPrayerStatusCalculator` defines it. Recomputed from the
+    /// same already-cached/adjusted windows as `currentWindow` on every
+    /// `now` tick, so it can never disagree with the tile highlight above.
+    private var currentStatus: CurrentPrayerStatusCalculator.Status? {
+        CurrentPrayerStatusCalculator.resolve(
+            now: now,
+            window: currentWindow,
+            duhaWindow: duhaWindow,
+            sunriseKarahaWindow: sunriseKarahaWindow,
+            preDhuhrKarahaWindow: preDhuhrKarahaWindow,
+            preMaghribKarahaWindow: asrKarahaWindow,
+            lastThirdWindow: lastThirdWindow
+        )
+    }
+
+    /// Today's Dhuhr/Jum'ah label, in the prayer location's own timezone —
+    /// shared by the status card and (already, via `PrayerTimesMapper`) the
+    /// Dhuhr tile itself, so the two can never disagree on a Friday.
+    private var dhuhrTitle: String {
+        PrayerDisplayNaming.dhuhrLabel(date: now, timezoneIdentifier: prayerTimes.timezone)
+    }
+
     var body: some View {
         NavigationStack {
             AppPageContainer {
                 AppPageHeader(title: "Gebetszeiten")
 
+                // Gregorian/Hijri side by side with a "•" separator, above
+                // the city/country line — same order and layout the
+                // Islamischer Kalender page uses for its own date line.
                 HStack(spacing: 8) {
-                    // Computed locally with a German-locale formatter
-                    // instead of showing `prayerTimes.readableDate` —
-                    // AlAdhan's own `readable` string ("06 Oct 2026") is
-                    // always English and never adapts to the app's German
-                    // UI. Always "today", exactly like the Hijri text next
-                    // to it, independent of whether prayer-time data has
-                    // finished loading yet.
                     Text(Self.formattedGregorianDate(Date()))
                     Text("•")
-                    // Computed locally via Umm-al-Qura instead of the
-                    // AlAdhan API's own Hijri string, so this always agrees
-                    // with the Islamic-calendar tab and the widget.
                     Text(HijriDateFormatting.displayText(for: Date()))
                 }
                 .font(.subheadline)
-
-                HStack(spacing: 8) {
-                    if prayerTimes.readableDay != "--" {
-                        Text(Self.germanWeekday(for: prayerTimes.readableDay))
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
-                    }
-
-                    Text("•")
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-
-                    if prayerTimes.hijriDay != "--" {
-                        Text(prayerTimes.hijriDay)
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
-                    }
-                }
-
-                Text(prayerTimes.timezone)
-                    .foregroundStyle(.secondary)
 
                 Text(currentAddress)
                     .font(.subheadline)
@@ -168,6 +174,16 @@ struct PrayerTimesHomeView: View {
                 Text(currentMethod)
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
+
+                if let currentStatus {
+                    CurrentStatusCard(
+                        status: currentStatus,
+                        dhuhrTitle: dhuhrTitle,
+                        lastThirdWindow: lastThirdWindow,
+                        preMaghribKarahaWindow: asrKarahaWindow,
+                        timezoneIdentifier: prayerTimes.timezone
+                    )
+                }
 
                 // Keyed by the fixed row position, never `PrayerRow.id`
                 // (a fresh `UUID()` on every single `rows(from:)` call,
@@ -191,6 +207,7 @@ struct PrayerTimesHomeView: View {
                             PrayerTile(
                                 name: row.name,
                                 time: row.time,
+                                icon: PrayerStatusIcon.symbolName(forCanonicalRow: canonicalName),
                                 isActive: isActive,
                                 isExpanded: expandedPrayer == canonicalName,
                                 expandHint: "Letztes Drittel der Nacht anzeigen",
@@ -205,6 +222,7 @@ struct PrayerTimesHomeView: View {
                             PrayerTile(
                                 name: row.name,
                                 time: row.time,
+                                icon: PrayerStatusIcon.symbolName(forCanonicalRow: canonicalName),
                                 isActive: isActive,
                                 isExpanded: expandedPrayer == canonicalName,
                                 expandHint: "Karāha vor Maghrib anzeigen",
@@ -219,6 +237,7 @@ struct PrayerTimesHomeView: View {
                             PrayerTile(
                                 name: row.name,
                                 time: row.time,
+                                icon: PrayerStatusIcon.symbolName(forCanonicalRow: canonicalName),
                                 isActive: isActive,
                                 isExpanded: expandedPrayer == canonicalName,
                                 expandHint: "Karāha nach Shuruk anzeigen",
@@ -229,8 +248,28 @@ struct PrayerTimesHomeView: View {
                                     karahaDetail(sunriseKarahaWindow)
                                 }
                             }
+                        case "Dhuhr":
+                            PrayerTile(
+                                name: row.name,
+                                time: row.time,
+                                icon: PrayerStatusIcon.symbolName(forCanonicalRow: canonicalName),
+                                isActive: isActive,
+                                isExpanded: expandedPrayer == canonicalName,
+                                expandHint: "Karāha vor Dhuhr anzeigen",
+                                collapseHint: "Karāha vor Dhuhr ausblenden",
+                                onToggle: { toggleExpansion(canonicalName) }
+                            ) {
+                                if let preDhuhrKarahaWindow {
+                                    karahaDetail(preDhuhrKarahaWindow)
+                                }
+                            }
                         default:
-                            PrayerTile(name: row.name, time: row.time, isActive: isActive)
+                            PrayerTile(
+                                name: row.name,
+                                time: row.time,
+                                icon: PrayerStatusIcon.symbolName(forCanonicalRow: canonicalName),
+                                isActive: isActive
+                            )
                         }
 
                         if row.name == "Jum'ah" {
@@ -423,24 +462,18 @@ struct PrayerTimesHomeView: View {
         let qiratWindows = QiratTimeResolver.windows(store: store, settings: autoSettings)
         asrKarahaWindow = qiratWindows.lateMaghribKaraha
         sunriseKarahaWindow = qiratWindows.sunriseKaraha
-    }
+        preDhuhrKarahaWindow = qiratWindows.preDhuhrKaraha
 
-    /// AlAdhan's own Gregorian weekday name always comes back in English
-    /// (e.g. "Thursday") — translated here purely for display, since the
-    /// rest of the app (cache keys, notification scheduling) never reads
-    /// this field for anything but display either.
-    private static let germanWeekdayNames: [String: String] = [
-        "Monday": "Montag",
-        "Tuesday": "Dienstag",
-        "Wednesday": "Mittwoch",
-        "Thursday": "Donnerstag",
-        "Friday": "Freitag",
-        "Saturday": "Samstag",
-        "Sunday": "Sonntag"
-    ]
-
-    private static func germanWeekday(for englishWeekday: String) -> String {
-        germanWeekdayNames[englishWeekday] ?? englishWeekday
+        if let todayAdjusted {
+            duhaWindow = DuhaCalculator.resolve(
+                now: now,
+                todayTimes: todayAdjusted,
+                sunriseKarahaWindow: sunriseKarahaWindow,
+                preDhuhrKarahaWindow: preDhuhrKarahaWindow
+            )
+        } else {
+            duhaWindow = nil
+        }
     }
 
     /// German-locale Gregorian date text (e.g. "6. Oktober 2026") — used
@@ -525,6 +558,11 @@ struct PrayerTimesHomeView: View {
 private struct PrayerTile<Detail: View>: View {
     let name: String
     let time: String
+    /// SF Symbol for this specific prayer — always supplied by the caller
+    /// via the one central `PrayerStatusIcon` mapping, never computed
+    /// here, so this view can't drift out of sync with the "Aktueller
+    /// Status" section's own icon choice for the same prayer.
+    let icon: String
     let isActive: Bool
     let isExpandable: Bool
     let isExpanded: Bool
@@ -536,6 +574,7 @@ private struct PrayerTile<Detail: View>: View {
     init(
         name: String,
         time: String,
+        icon: String,
         isActive: Bool,
         isExpanded: Bool,
         expandHint: String,
@@ -545,6 +584,7 @@ private struct PrayerTile<Detail: View>: View {
     ) {
         self.name = name
         self.time = time
+        self.icon = icon
         self.isActive = isActive
         self.isExpandable = true
         self.isExpanded = isExpanded
@@ -612,16 +652,15 @@ private struct PrayerTile<Detail: View>: View {
 
     private var rowLabel: some View {
         HStack(spacing: 8) {
-            if isActive {
-                // No verified literal "mosque" SF Symbol exists as of this
-                // writing; a dignified, clearly-not-decorative building
-                // glyph stands in for it instead of risking an invented
-                // symbol name that silently renders nothing.
-                Image(systemName: "building.columns.fill")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(Color.orange)
-                    .accessibilityHidden(true)
-            }
+            // Always this prayer's own symbol (sunrise/sun/moon…) — no
+            // Masjid/building glyph appears in this row at all anymore;
+            // the orange tint plus bold text below is the only "active"
+            // marker.
+            Image(systemName: icon)
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(isActive ? Color.orange : Color.secondary)
+                .frame(width: 20)
+                .accessibilityHidden(true)
 
             Text(name)
                 .fontWeight(isActive ? .semibold : .regular)
@@ -645,9 +684,10 @@ private struct PrayerTile<Detail: View>: View {
 }
 
 extension PrayerTile where Detail == EmptyView {
-    init(name: String, time: String, isActive: Bool) {
+    init(name: String, time: String, icon: String, isActive: Bool) {
         self.name = name
         self.time = time
+        self.icon = icon
         self.isActive = isActive
         self.isExpandable = false
         self.isExpanded = false
@@ -655,5 +695,335 @@ extension PrayerTile where Detail == EmptyView {
         self.collapseHint = ""
         self.onToggle = {}
         self.detail = EmptyView()
+    }
+}
+
+/// The "Aktueller Status" section: shows whichever relevant window
+/// (`CurrentPrayerStatusCalculator.Status`) is currently active — including
+/// Duha and the sunrise Karāha, which deliberately get no tile of their own
+/// in the list above. Styled distinctly from `PrayerTile`'s orange
+/// obligatory-prayer highlight: a voluntary/transitional status never
+/// borrows that chrome, so it can never read as "the current obligatory
+/// prayer" (see `CurrentPrayerStatusDisplay.isObligatory`).
+private struct CurrentStatusCard: View {
+    let status: CurrentPrayerStatusCalculator.Status
+    let dhuhrTitle: String
+    /// Only used to locate the "Letztes Drittel" boundary marker on the
+    /// bar when `status.kind == .isha` — reused as-is, never recomputed.
+    let lastThirdWindow: LastThirdOfNightResolver.ResolvedWindow?
+    /// Only used to locate the Karāha-vor-Maghrib boundary marker on the
+    /// bar when `status.kind == .asr` — reused as-is, never recomputed.
+    let preMaghribKarahaWindow: QiratTimeResolver.ApproximateWindow?
+    /// The prayer location's own timezone — never the device's — for
+    /// formatting `status.start`/`status.end`/the boundary marker as
+    /// clock times.
+    let timezoneIdentifier: String
+
+    private var isObligatory: Bool {
+        CurrentPrayerStatusDisplay.isObligatory(status.kind)
+    }
+
+    private var mainLabel: String {
+        CurrentPrayerStatusDisplay.label(for: status.kind, dhuhrTitle: dhuhrTitle)
+    }
+
+    /// The fixed prayer/status sequence the app always walks in (…→
+    /// Karāha → Duha → Karāha vor Dhuhr → Dhuhr → Asr → Karāha vor
+    /// Maghrib → Maghrib → Isha → Fajr → …), so the bar's trailing-edge
+    /// label never needs a second window lookup.
+    private var trailingLabel: String {
+        switch status.kind {
+        case .fajr: return "Shuruk"
+        case .sunriseKaraha: return "Duha"
+        case .duha: return "Karāha"
+        case .preDhuhrKaraha: return dhuhrTitle
+        case .dhuhr: return "Asr"
+        case .asr: return "Maghrib"
+        case .preMaghribKaraha: return "Maghrib"
+        case .maghrib: return "Isha"
+        case .isha, .lastThirdOfNight: return "Fajr"
+        }
+    }
+
+    /// Isha stays orange like every other obligatory prayer; Duha is also
+    /// orange, matching the app's "current prayer" accent, even though it
+    /// stays labeled "freiwillig". Every Karāha kind stays a dezent
+    /// secondary (gray) tone — never orange (never "the current prayer"),
+    /// and never "freiwillig" either (see `showsVoluntaryBadge`).
+    ///
+    /// Once an `additionalKind` sub-window actually becomes active — the
+    /// last third of the night during Isha, or the Karāha vor Maghrib
+    /// during Asr — the *entire* bar switches to that sub-window's own
+    /// color instead of staying Isha's/Asr's normal orange. The last
+    /// third switches to a light orange (still clearly in the same
+    /// "Isha" orange family, just visibly lighter); the Karāha vor
+    /// Maghrib switches to the exact same gray every other Karāha kind
+    /// already uses (e.g. Karāha vor Dhuhr), not a separate color.
+    /// There's no separate highlighted zone — the whole bar's color is
+    /// the one live signal for "which sub-window am I in right now".
+    private var accentColor: Color {
+        switch status.additionalKind {
+        case .lastThirdOfNight: return Self.lastThirdAccentColor
+        case .preMaghribKaraha: return .secondary
+        default: break
+        }
+
+        switch status.kind {
+        case .lastThirdOfNight: return Self.lastThirdAccentColor
+        case .fajr, .dhuhr, .asr, .maghrib, .isha, .duha: return .orange
+        case .sunriseKaraha, .preDhuhrKaraha, .preMaghribKaraha: return .secondary
+        }
+    }
+
+    /// A light orange for the last third of the night — still clearly in
+    /// the same "Isha" orange family as the bar's own normal fill, just
+    /// visibly lighter, so the switch is unmistakable once the last
+    /// third actually begins.
+    private static let lastThirdAccentColor = Color(red: 1.0, green: 0.75, blue: 0.3)
+
+    /// Only Duha and the last third of the night may be labeled
+    /// "freiwillig" — a Karāha window is a caution period, never a
+    /// voluntary-prayer opportunity, and an obligatory prayer is neither.
+    private var showsVoluntaryBadge: Bool {
+        !isObligatory && !CurrentPrayerStatusDisplay.isKaraha(status.kind)
+    }
+
+    /// When "Letztes Drittel" (during Isha) or the Karāha vor Maghrib
+    /// (during Asr) begins. Keyed off `status.kind` — not `additionalKind`
+    /// — so this marker always shows where the boundary falls for the
+    /// *whole* Isha/Asr window, not only once that sub-window has already
+    /// started. Purely a time marker on the bar now — it no longer draws
+    /// a separate filled zone; only the bar's own fill color (see
+    /// `accentColor`) changes once the boundary is actually reached.
+    private var markerStart: Date? {
+        switch status.kind {
+        case .isha: return lastThirdWindow?.start
+        case .asr: return preMaghribKarahaWindow?.start
+        default: return nil
+        }
+    }
+
+    /// Where `markerStart` falls as a 0...1 fraction of the bar. `nil`
+    /// whenever there's no boundary to show.
+    private var markerFraction: Double? {
+        guard let markerStart else { return nil }
+        let total = status.end.timeIntervalSince(status.start)
+        guard total > 0 else { return nil }
+        let offset = markerStart.timeIntervalSince(status.start)
+        return min(max(offset / total, 0), 1)
+    }
+
+    /// The clock time `markerStart` falls at — never shown without a
+    /// matching position on the bar.
+    private var markerLabel: String? {
+        guard let markerStart else { return nil }
+        return clockText(markerStart)
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 8) {
+                // Always the status-specific symbol (sunrise/sun/moon…)
+                // from the one central `PrayerStatusIcon` mapping — the
+                // Masjid glyph is reserved for marking the active
+                // obligatory prayer's row in the list below, not shown
+                // here.
+                Image(systemName: PrayerStatusIcon.symbolName(for: status.kind))
+                    .foregroundStyle(accentColor)
+                    .accessibilityHidden(true)
+
+                Text(statusLine)
+                    .font(.headline)
+                    .foregroundStyle(accentColor)
+
+                Spacer()
+
+                if showsVoluntaryBadge {
+                    Text("freiwillig")
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 3)
+                        .background(Color.secondary.opacity(0.15))
+                        .clipShape(Capsule())
+                }
+            }
+            // Pulls the bar closer to the prayer name above — the
+            // enclosing VStack's own `spacing: 10` is tuned for the
+            // bar-to-label gap below; this specific gap reads better
+            // tighter.
+            .padding(.bottom, -4)
+
+            StatusProgressBar(
+                progress: status.progress,
+                accentColor: accentColor,
+                markerFraction: markerFraction,
+                markerLabel: markerLabel
+            )
+
+            HStack {
+                Text("\(mainLabel) \(clockText(status.start))")
+                    .monospacedDigit()
+                Spacer()
+                Text("\(trailingLabel) \(clockText(status.end))")
+                    .monospacedDigit()
+            }
+            .overlay {
+                // Live, self-ticking countdown to the end of the current
+                // status window — `Text(_:style:.timer)` updates on its
+                // own (every second) without any extra app-side polling,
+                // exactly like the widget's own "Noch" countdown. Kept on
+                // one line ("noch xx:xx:xx"), centered between the two
+                // prayer labels regardless of their own width.
+                HStack(spacing: 4) {
+                    Text("noch")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                    Text(status.end, style: .timer)
+                        .font(.subheadline.monospacedDigit())
+                        .fontWeight(.semibold)
+                        .foregroundStyle(accentColor)
+                }
+            }
+            .font(.caption2)
+            .foregroundStyle(.secondary)
+        }
+        .padding()
+        // Same glass-card chrome as the `PrayerTile` rows below — plain
+        // `.thinMaterial` alone (no stroke/shadow) made this card look
+        // flatter/plainer than the rest of the page.
+        .background {
+            RoundedRectangle(cornerRadius: 22, style: .continuous)
+                .fill(.thinMaterial)
+        }
+        .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
+        .overlay(alignment: .top) {
+            RoundedRectangle(cornerRadius: 22, style: .continuous)
+                .stroke(
+                    LinearGradient(
+                        colors: [
+                            Color.white.opacity(0.35),
+                            Color.white.opacity(0.06),
+                            Color.clear
+                        ],
+                        startPoint: .top,
+                        endPoint: .bottom
+                    ),
+                    lineWidth: 1
+                )
+        }
+        .shadow(color: .black.opacity(0.16), radius: 16, y: 8)
+    }
+
+    /// Formats an already-resolved absolute `Date` as a clock time in the
+    /// *prayer location's* own timezone — never the device's.
+    private func clockText(_ date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = TimeZone(identifier: timezoneIdentifier) ?? .current
+        formatter.dateFormat = "HH:mm"
+        return formatter.string(from: date)
+    }
+
+    /// e.g. "Aktuell: Dhuhr", "Aktuell: Karāha", or, when the last third of
+    /// the night overlaps an active Isha window, "Aktuell: Isha · Letztes
+    /// Drittel".
+    private var statusLine: String {
+        guard let additionalKind = status.additionalKind else {
+            return "Aktuell: \(mainLabel)"
+        }
+        let additionalLabel = CurrentPrayerStatusDisplay.label(for: additionalKind, dhuhrTitle: dhuhrTitle)
+        return "Aktuell: \(mainLabel) · \(additionalLabel)"
+    }
+}
+
+/// A capsule timeline bar with a glowing "you are here" marker, styled
+/// after a night-sky progress indicator: a soft track, the fill itself
+/// (`accentColor`, already switched by the caller to the right color for
+/// whatever sub-window is actually active right now — see
+/// `CurrentStatusCard.accentColor`), an optional small time tick for an
+/// upcoming boundary (e.g. where "Letztes Drittel" begins), and a
+/// blurred-halo thumb at the current progress fraction. Deliberately no
+/// decorative sparkle/star overlay — a clean single icon
+/// (`PrayerStatusIcon`) already conveys "night" where appropriate, so
+/// this bar never duplicates that with separate dots, and no filled
+/// highlighted sub-zone either — only the fill's own color changes once
+/// a sub-window is actually active; the tick is a plain time marker, not
+/// a colored zone. Purely presentational — every position is derived
+/// from the already-resolved `progress`/`markerFraction`, no calculation
+/// of its own.
+private struct StatusProgressBar: View {
+    let progress: Double
+    let accentColor: Color
+    /// Where an upcoming boundary (e.g. the start of "Letztes Drittel")
+    /// falls as a 0...1 fraction of the bar. `nil` shows no marker at all.
+    var markerFraction: Double? = nil
+    /// Clock time `markerFraction` corresponds to, shown as a small tag
+    /// above the tick. `nil` whenever `markerFraction` itself is `nil`.
+    var markerLabel: String? = nil
+
+    private let trackHeight: CGFloat = 10
+    private let thumbDiameter: CGFloat = 14
+
+    var body: some View {
+        GeometryReader { proxy in
+            let width = proxy.size.width
+            let clampedProgress = min(max(progress, 0), 1)
+
+            ZStack(alignment: .leading) {
+                Capsule()
+                    .fill(Color.secondary.opacity(0.15))
+                    .frame(height: trackHeight)
+
+                Capsule()
+                    .fill(accentColor)
+                    .frame(width: max(width * clampedProgress, trackHeight), height: trackHeight)
+
+                if let markerFraction {
+                    Rectangle()
+                        .fill(Color.primary.opacity(0.6))
+                        .frame(width: 1.5, height: trackHeight + 6)
+                        .offset(x: width * markerFraction, y: 0)
+                }
+
+                if let markerFraction, let markerLabel {
+                    Text(markerLabel)
+                        .font(.system(size: 9, weight: .semibold))
+                        .foregroundStyle(.secondary)
+                        .fixedSize()
+                        .offset(
+                            x: min(max(width * markerFraction - 14, 0), max(width - 30, 0)),
+                            y: -12
+                        )
+                }
+
+                thumb
+                    .offset(x: width * clampedProgress - thumbDiameter / 2)
+            }
+            .frame(height: trackHeight)
+        }
+        .frame(height: trackHeight)
+        // Top/bottom padding kept equal — together with the card's own
+        // header-to-bar spacing override above, this makes the gap above
+        // the bar (to the prayer name) exactly match the gap below it
+        // (to the start/end labels). Still just enough room for the
+        // thumb's blurred glow and the marker's time tag above.
+        .padding(.top, 14)
+        .padding(.bottom, 10)
+    }
+
+    private var thumb: some View {
+        ZStack {
+            Circle()
+                .fill(accentColor.opacity(0.4))
+                .frame(width: thumbDiameter + 10, height: thumbDiameter + 10)
+                .blur(radius: 4)
+
+            Circle()
+                .fill(Color.white)
+                .frame(width: thumbDiameter, height: thumbDiameter)
+                .shadow(color: accentColor.opacity(0.7), radius: 3)
+        }
+        .frame(width: thumbDiameter, height: thumbDiameter)
     }
 }

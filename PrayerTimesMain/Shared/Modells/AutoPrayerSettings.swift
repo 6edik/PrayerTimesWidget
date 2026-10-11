@@ -42,6 +42,15 @@ nonisolated struct AutoPrayerSettings: Codable, Equatable {
         sunriseKarahaOffsetMinutesOverride ?? QiratTimeResolver.defaultSunriseKarahaOffsetMinutes
     }
 
+    // Same backward-compatible optionality pattern, for the Karāha-vor-
+    // Dhuhr approximation (Dhuhr's own start minus this many minutes —
+    // never anchored to Duha's start).
+    var preDhuhrKarahaOffsetMinutesOverride: Int? = nil
+
+    var preDhuhrKarahaOffsetMinutes: Int {
+        preDhuhrKarahaOffsetMinutesOverride ?? QiratTimeResolver.defaultPreDhuhrKarahaOffsetMinutes
+    }
+
     func asPrayerSettings(for date: Date = Date()) -> PrayerSettings {
         PrayerSettings(
             address: address,

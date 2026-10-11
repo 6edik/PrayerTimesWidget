@@ -40,6 +40,7 @@ struct NotificationScheduler {
     static let fastingIdentifierPrefix = "com.mertgedik.prayertimes.notif.fasting."
     static let zakatIdentifierPrefix = "com.mertgedik.prayertimes.notif.zakat."
     static let qiratIdentifierPrefix = "com.mertgedik.prayertimes.notif.qirat."
+    static let duhaIdentifierPrefix = "com.mertgedik.prayertimes.notif.duha."
 
     private let timesStore: SharedPrayerTimesStore
     private let settingsStore: SharedPrayerSettingsStore
@@ -95,6 +96,7 @@ struct NotificationScheduler {
                 || notificationSettings.hasAnyVoluntaryFastingEnabled
                 || notificationSettings.hasAnyZakatEnabled
                 || notificationSettings.hasAnyQiratEnabled
+                || notificationSettings.hasAnyDuhaEnabled
         else {
             return
         }
@@ -125,6 +127,10 @@ struct NotificationScheduler {
 
         if notificationSettings.hasAnyQiratEnabled {
             candidates += qiratCandidates(settings: notificationSettings)
+        }
+
+        if notificationSettings.hasAnyDuhaEnabled {
+            candidates += duhaCandidates(settings: notificationSettings)
         }
 
         let budget = await remainingBudget()
@@ -542,7 +548,8 @@ struct NotificationScheduler {
                 adjustments: autoSettings.adjustments,
                 latitude: latitude,
                 lateKerahetOffsetMinutes: autoSettings.lateKerahetOffsetMinutes,
-                sunriseKarahaOffsetMinutes: autoSettings.sunriseKarahaOffsetMinutes
+                sunriseKarahaOffsetMinutes: autoSettings.sunriseKarahaOffsetMinutes,
+                preDhuhrKarahaOffsetMinutes: autoSettings.preDhuhrKarahaOffsetMinutes
             )
 
             if let sunrise = windows.sunriseKaraha {
@@ -550,6 +557,16 @@ struct NotificationScheduler {
                 result.append(NotificationCandidate(
                     identifier: "\(Self.qiratIdentifierPrefix)sunriseKaraha.\(isoDate)",
                     fireDate: sunrise.start,
+                    title: "Karāha",
+                    body: "Gebetspause bis \(endClock)."
+                ))
+            }
+
+            if let preDhuhr = windows.preDhuhrKaraha {
+                let endClock = FastingDurationCalculator.clockString(preDhuhr.end, timezoneIdentifier: preDhuhr.timezoneIdentifier)
+                result.append(NotificationCandidate(
+                    identifier: "\(Self.qiratIdentifierPrefix)preDhuhrKaraha.\(isoDate)",
+                    fireDate: preDhuhr.start,
                     title: "Karāha",
                     body: "Gebetspause bis \(endClock)."
                 ))
@@ -564,6 +581,80 @@ struct NotificationScheduler {
                     body: "Gebetspause bis \(endClock)."
                 ))
             }
+        }
+
+        return result
+    }
+
+    // MARK: - Duha candidates
+
+    /// One candidate per cached day, firing exactly at Duha's own start —
+    /// the end of the sunrise Karāha (`DuhaCalculator`, the same type the
+    /// Gebetszeiten page and widget use; never a second, independently
+    /// computed start time here). This single fire time already satisfies
+    /// every timing constraint in the spec: it is strictly after the
+    /// sunrise Karāha ends (so never during it) and strictly before the
+    /// Karāha-vor-Dhuhr window begins (so never after that, either) — Duha
+    /// resolving to `nil` (sunrise Karāha suppressed/uncached, or Dhuhr
+    /// not strictly after it) simply contributes nothing for that day,
+    /// never a guessed time. A day with no resolvable window is skipped
+    /// entirely, same as every other candidate function here.
+    func duhaCandidates(settings: NotificationSettings, now: Date = Date()) -> [NotificationCandidate] {
+        guard settings.duha.isEnabled else { return [] }
+
+        let autoSettings = settingsStore.loadAutoSettings()
+        let cachedDays = timesStore.loadAllDays(settings: autoSettings)
+        guard !cachedDays.isEmpty else { return [] }
+
+        let latitude = autoSettings.location?.coordinate.latitude
+
+        var result: [NotificationCandidate] = []
+
+        for (isoDate, day) in cachedDays {
+            guard let dayStart = PrayerMomentResolver.dayStart(isoDate: isoDate, timezoneIdentifier: day.times.timezone) else {
+                continue
+            }
+
+            let windows = QiratTimeResolver.windows(
+                base: dayStart,
+                times: day.times,
+                adjustments: autoSettings.adjustments,
+                latitude: latitude,
+                lateKerahetOffsetMinutes: autoSettings.lateKerahetOffsetMinutes,
+                sunriseKarahaOffsetMinutes: autoSettings.sunriseKarahaOffsetMinutes,
+                preDhuhrKarahaOffsetMinutes: autoSettings.preDhuhrKarahaOffsetMinutes
+            )
+
+            guard let sunriseKaraha = windows.sunriseKaraha else { continue }
+
+            var locationCalendar = Calendar(identifier: .gregorian)
+            locationCalendar.timeZone = TimeZone(identifier: day.times.timezone) ?? .current
+
+            let adjusted = day.times.applyingAdjustmentsWithDayOffsets(autoSettings.adjustments)
+            let shuruk = PrayerTimeAdjuster.date(
+                forAdjusted: .init(value: adjusted.times.shuruk, dayOffset: adjusted.dayOffsets.shuruk),
+                base: dayStart,
+                calendar: locationCalendar
+            )
+            guard let dhuhr = PrayerTimeAdjuster.date(
+                forAdjusted: .init(value: adjusted.times.dhuhr, dayOffset: adjusted.dayOffsets.dhuhr),
+                base: dayStart,
+                calendar: locationCalendar
+            ) else { continue }
+
+            guard DuhaCalculator.window(
+                sunriseKarahaEnd: sunriseKaraha.end,
+                shuruk: shuruk,
+                dhuhr: dhuhr,
+                preDhuhrKarahaStart: windows.preDhuhrKaraha?.start
+            ) != nil else { continue }
+
+            result.append(NotificationCandidate(
+                identifier: "\(Self.duhaIdentifierPrefix)\(isoDate)",
+                fireDate: sunriseKaraha.end,
+                title: "Duha",
+                body: "Es ist Zeit für Duha."
+            ))
         }
 
         return result
@@ -590,6 +681,7 @@ struct NotificationScheduler {
             || identifier.hasPrefix(Self.fastingIdentifierPrefix)
             || identifier.hasPrefix(Self.zakatIdentifierPrefix)
             || identifier.hasPrefix(Self.qiratIdentifierPrefix)
+            || identifier.hasPrefix(Self.duhaIdentifierPrefix)
     }
 
     private func schedule(_ candidate: NotificationCandidate) async {

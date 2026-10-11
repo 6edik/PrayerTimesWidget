@@ -77,6 +77,15 @@ struct QiratTimesNotificationSetting: Codable, Equatable {
     var isEnabled: Bool = false
 }
 
+/// "An Duha erinnern" — fires once, at the start of the Duha window (the
+/// end of the sunrise Karāha). Entirely separate from `qirat` above: a
+/// person can want a Karāha warning without a Duha reminder, or vice
+/// versa. Off by default, per the same convention as every other opt-in
+/// reminder here.
+struct DuhaNotificationSetting: Codable, Equatable {
+    var isEnabled: Bool = false
+}
+
 struct NotificationSettings: Codable, Equatable {
     var fajr: PrayerNotificationSetting
     var dhuhr: PrayerNotificationSetting
@@ -96,6 +105,8 @@ struct NotificationSettings: Codable, Equatable {
 
     var qirat: QiratTimesNotificationSetting
 
+    var duha: DuhaNotificationSetting
+
     init(
         fajr: PrayerNotificationSetting = PrayerNotificationSetting(),
         dhuhr: PrayerNotificationSetting = PrayerNotificationSetting(),
@@ -105,7 +116,8 @@ struct NotificationSettings: Codable, Equatable {
         holidays: [String: HolidayNotificationSetting] = [:],
         voluntaryFasting: VoluntaryFastingNotificationSetting = VoluntaryFastingNotificationSetting(),
         zakat: ZakatNotificationSetting = ZakatNotificationSetting(),
-        qirat: QiratTimesNotificationSetting = QiratTimesNotificationSetting()
+        qirat: QiratTimesNotificationSetting = QiratTimesNotificationSetting(),
+        duha: DuhaNotificationSetting = DuhaNotificationSetting()
     ) {
         self.fajr = fajr
         self.dhuhr = dhuhr
@@ -116,16 +128,17 @@ struct NotificationSettings: Codable, Equatable {
         self.voluntaryFasting = voluntaryFasting
         self.zakat = zakat
         self.qirat = qirat
+        self.duha = duha
     }
 
     private enum CodingKeys: String, CodingKey {
-        case fajr, dhuhr, asr, maghrib, isha, holidays, voluntaryFasting, zakat, qirat
+        case fajr, dhuhr, asr, maghrib, isha, holidays, voluntaryFasting, zakat, qirat, duha
     }
 
     // Custom decode so settings saved before `holidays`/`voluntaryFasting`/
-    // `zakat`/`qirat` existed still decode — with their defaults — instead
-    // of a decode failure (missing key) that would silently reset every
-    // other already-configured prayer notification setting too.
+    // `zakat`/`qirat`/`duha` existed still decode — with their defaults —
+    // instead of a decode failure (missing key) that would silently reset
+    // every other already-configured prayer notification setting too.
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         fajr = try container.decodeIfPresent(PrayerNotificationSetting.self, forKey: .fajr) ?? PrayerNotificationSetting()
@@ -137,6 +150,7 @@ struct NotificationSettings: Codable, Equatable {
         voluntaryFasting = try container.decodeIfPresent(VoluntaryFastingNotificationSetting.self, forKey: .voluntaryFasting) ?? VoluntaryFastingNotificationSetting()
         zakat = try container.decodeIfPresent(ZakatNotificationSetting.self, forKey: .zakat) ?? ZakatNotificationSetting()
         qirat = try container.decodeIfPresent(QiratTimesNotificationSetting.self, forKey: .qirat) ?? QiratTimesNotificationSetting()
+        duha = try container.decodeIfPresent(DuhaNotificationSetting.self, forKey: .duha) ?? DuhaNotificationSetting()
     }
 
     static let zero = NotificationSettings()
@@ -187,5 +201,9 @@ struct NotificationSettings: Codable, Equatable {
 
     var hasAnyQiratEnabled: Bool {
         qirat.isEnabled
+    }
+
+    var hasAnyDuhaEnabled: Bool {
+        duha.isEnabled
     }
 }

@@ -72,25 +72,24 @@ struct StatisticsView: View {
                     statRow("Methode", settings.method.title)
                 }
 
-                Section("Hinweis") {
-                    Text("Sobald nur noch 2 Tage Abdeckung übrig sind, sollte die App den Wochen-Cache erneut laden.")
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-                }
-
                 Section {
                     // Pushed inside this view's own `NavigationStack` —
                     // `CachedPrayerTimesContent` never wraps itself in a
                     // second one, so there's no nested stack. This is now
                     // the only way to reach it; the standalone
                     // "Gespeicherte Gebetszeiten" sheet on the Home page
-                    // was removed. Deliberately the very last section on
-                    // this page, below "Hinweis".
+                    // was removed. Deliberately above "Hinweis".
                     NavigationLink {
                         CachedPrayerTimesContent()
                     } label: {
                         Label("Gespeicherte Gebetszeiten", systemImage: "tray.full")
                     }
+                }
+
+                Section("Hinweis") {
+                    Text("Sobald nur noch 2 Tage Abdeckung übrig sind, sollte die App den Wochen-Cache erneut laden.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
                 }
             }
             .scrollContentBackground(.hidden)

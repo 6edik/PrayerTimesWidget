@@ -19,6 +19,15 @@ import Foundation
 ///   concepts stay explicitly distinct instead of being silently
 ///   conflated into one pauschal "verboten" window.
 ///
+/// - **Karāha vor Dhuhr** (`preDhuhrKaraha`): a fixed number of minutes
+///   immediately before Dhuhr's own start. Mirrors `lateMaghribKaraha`
+///   below in every respect (fixed approximation, anchored at the *end*,
+///   latitude-gated) but sits before Dhuhr instead of Maghrib. This is
+///   what separates Duha's own end from Dhuhr's own start — Duha ends
+///   exactly where this window begins, Dhuhr begins exactly where it ends
+///   (see `DuhaCalculator`, which consumes this window's `start` as
+///   Duha's `end` instead of using Dhuhr directly).
+///
 /// - **Karāha vor Maghrib** (`lateMaghribKaraha`): a fixed number of
 ///   minutes immediately before Maghrib. Deliberately an
 ///   **approximation**, never an exact fiqh boundary, and — importantly —
@@ -32,10 +41,10 @@ import Foundation
 ///
 /// A fixed-minute approximation stops being a meaningful "moderate
 /// region" estimate at extreme latitudes (twilight duration and day
-/// length vary too drastically there), so both `sunriseKaraha` and
-/// `lateMaghribKaraha` are suppressed entirely — never shown with a
-/// number that would be actively misleading — whenever the configured
-/// location's latitude is unknown or outside
+/// length vary too drastically there), so `sunriseKaraha`,
+/// `preDhuhrKaraha` and `lateMaghribKaraha` are all suppressed entirely —
+/// never shown with a number that would be actively misleading —
+/// whenever the configured location's latitude is unknown or outside
 /// `maxPlausibleLatitudeForApproximation`. `afterFajrVoluntaryRestriction`
 /// has no such restriction: both its endpoints are exact data, not a
 /// fixed offset, so it stays valid at any latitude the underlying
@@ -44,10 +53,11 @@ import Foundation
 /// All windows reuse `PrayerTimeAdjuster` — the same midnight-safe,
 /// location-timezone-aware machinery the rest of the app already relies
 /// on — so personal minute adjustments and DST are handled exactly like
-/// every other computed prayer moment. The Maghrib-minute adjustment is
-/// applied exactly once (inside `applyingAdjustmentsWithDayOffsets`
-/// below); each approximation offset is only ever added/subtracted from
-/// that single already-adjusted instant.
+/// every other computed prayer moment. The Maghrib-/Dhuhr-minute
+/// adjustments are each applied exactly once (inside
+/// `applyingAdjustmentsWithDayOffsets` below); each approximation offset
+/// is only ever added/subtracted from that single already-adjusted
+/// instant.
 nonisolated enum QiratTimeResolver {
     struct ResolvedWindow: Equatable {
         let start: Date
@@ -69,11 +79,13 @@ nonisolated enum QiratTimeResolver {
     struct ResolvedWindows: Equatable {
         let sunriseKaraha: ApproximateWindow?
         let afterFajrVoluntaryRestriction: ResolvedWindow?
+        let preDhuhrKaraha: ApproximateWindow?
         let lateMaghribKaraha: ApproximateWindow?
 
         static let none = ResolvedWindows(
             sunriseKaraha: nil,
             afterFajrVoluntaryRestriction: nil,
+            preDhuhrKaraha: nil,
             lateMaghribKaraha: nil
         )
     }
@@ -84,12 +96,19 @@ nonisolated enum QiratTimeResolver {
     nonisolated static let defaultSunriseKarahaOffsetMinutes = 20
 
     /// Default orientation value only — NOT a computed or fiqh-exact
+    /// boundary. See the type-level documentation above. Deliberately much
+    /// shorter than the sunset approximation — the window right around
+    /// solar noon is traditionally understood as brief.
+    nonisolated static let defaultPreDhuhrKarahaOffsetMinutes = 10
+
+    /// Default orientation value only — NOT a computed or fiqh-exact
     /// boundary. See the type-level documentation above.
     nonisolated static let defaultLateKerahetOffsetMinutes = 45
 
-    /// Beyond this absolute latitude, a fixed-minute approximation (either
-    /// `sunriseKaraha` or `lateMaghribKaraha`) stops being a meaningful
-    /// "moderate region" estimate. See the type-level documentation above.
+    /// Beyond this absolute latitude, a fixed-minute approximation
+    /// (`sunriseKaraha`, `preDhuhrKaraha`, or `lateMaghribKaraha`) stops
+    /// being a meaningful "moderate region" estimate. See the type-level
+    /// documentation above.
     ///
     /// Deliberately well above all of Germany/Central Europe (Sylt, the
     /// country's northernmost point, sits at ~55°N; Berlin at ~52.5°N) —
@@ -109,7 +128,7 @@ nonisolated enum QiratTimeResolver {
     ///
     /// - Parameter latitude: the configured location's latitude, used
     ///   only for the plausibility check above. `nil` (no confirmed
-    ///   location) suppresses both approximations the same way an
+    ///   location) suppresses all three approximations the same way an
     ///   out-of-range latitude does — never a guessed location.
     static func windows(
         base: Date,
@@ -117,7 +136,8 @@ nonisolated enum QiratTimeResolver {
         adjustments: PrayerAdjustments,
         latitude: Double?,
         lateKerahetOffsetMinutes: Int = defaultLateKerahetOffsetMinutes,
-        sunriseKarahaOffsetMinutes: Int = defaultSunriseKarahaOffsetMinutes
+        sunriseKarahaOffsetMinutes: Int = defaultSunriseKarahaOffsetMinutes,
+        preDhuhrKarahaOffsetMinutes: Int = defaultPreDhuhrKarahaOffsetMinutes
     ) -> ResolvedWindows {
         let adjusted = times.applyingAdjustmentsWithDayOffsets(adjustments)
 
@@ -134,6 +154,7 @@ nonisolated enum QiratTimeResolver {
 
         let fajr = moment(adjusted.times.fajr, adjusted.dayOffsets.fajr)
         let shuruk = moment(adjusted.times.shuruk, adjusted.dayOffsets.shuruk)
+        let dhuhr = moment(adjusted.times.dhuhr, adjusted.dayOffsets.dhuhr)
         let maghrib = moment(adjusted.times.maghrib, adjusted.dayOffsets.maghrib)
 
         let isLatitudePlausible = latitude.map { abs($0) <= maxPlausibleLatitudeForApproximation } ?? false
@@ -156,6 +177,21 @@ nonisolated enum QiratTimeResolver {
             ResolvedWindow(start: $0.start, end: $0.end, timezoneIdentifier: adjusted.times.timezone)
         }
 
+        var preDhuhrKaraha: ApproximateWindow?
+        if let dhuhr, preDhuhrKarahaOffsetMinutes > 0, isLatitudePlausible {
+            // `dhuhr` already has the personal Dhuhr-minute adjustment
+            // applied exactly once, above. Only ever subtract the
+            // approximation offset from this single already-adjusted
+            // instant — never re-apply `adjustments.dhuhr` a second time.
+            let start = dhuhr.addingTimeInterval(-Double(preDhuhrKarahaOffsetMinutes) * 60)
+            preDhuhrKaraha = ApproximateWindow(
+                start: start,
+                end: dhuhr,
+                timezoneIdentifier: adjusted.times.timezone,
+                offsetMinutes: preDhuhrKarahaOffsetMinutes
+            )
+        }
+
         var lateMaghribKaraha: ApproximateWindow?
         if let maghrib, lateKerahetOffsetMinutes > 0, isLatitudePlausible {
             // `maghrib` already has the personal Maghrib-minute adjustment
@@ -174,6 +210,7 @@ nonisolated enum QiratTimeResolver {
         return ResolvedWindows(
             sunriseKaraha: sunriseKaraha,
             afterFajrVoluntaryRestriction: afterFajrVoluntaryRestriction,
+            preDhuhrKaraha: preDhuhrKaraha,
             lateMaghribKaraha: lateMaghribKaraha
         )
     }
@@ -194,7 +231,8 @@ nonisolated enum QiratTimeResolver {
             adjustments: settings.adjustments,
             latitude: settings.location?.coordinate.latitude,
             lateKerahetOffsetMinutes: settings.lateKerahetOffsetMinutes,
-            sunriseKarahaOffsetMinutes: settings.sunriseKarahaOffsetMinutes
+            sunriseKarahaOffsetMinutes: settings.sunriseKarahaOffsetMinutes,
+            preDhuhrKarahaOffsetMinutes: settings.preDhuhrKarahaOffsetMinutes
         )
     }
 }
