@@ -5,5 +5,7 @@ import WidgetKit
 struct PrayerTimesWidget: WidgetBundle {
     var body: some Widget {
         PrayerTimesWidgetStructure()
+        PrayerCountdownLockWidgetStructure()
+        PrayerDateLockWidgetStructure()
     }
 }

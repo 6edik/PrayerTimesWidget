@@ -384,18 +384,42 @@ struct NotificationScheduler {
             result.append(NotificationCandidate(
                 identifier: "\(Self.fastingIdentifierPrefix)\(iso)",
                 fireDate: fireDate,
-                title: "Morgen: freiwilliges Fasten",
-                body: Self.fastingBody(occasions: occasions, duration: duration)
+                title: Self.fastingTitle(occasions: occasions),
+                body: Self.fastingBody(duration: duration)
             ))
         }
 
         return result
     }
 
-    private static func fastingBody(occasions: VoluntaryFastingOccasions, duration: String?) -> String {
-        let occasionSentence = "Morgen ist \(occasions.displayLabel)."
-        guard let duration else { return occasionSentence }
-        return "\(occasionSentence) Fastendauer: ca. \(duration)."
+    /// "Morgen: Montags Fasten", "Morgen: Weißer Tag Fasten", or (if a day
+    /// matches more than one occasion at once) "Morgen: Montags und
+    /// Weißer Tag Fasten" — the occasion itself, compact enough to be the
+    /// notification's title instead of a separate body sentence.
+    private static func fastingTitle(occasions: VoluntaryFastingOccasions) -> String {
+        var parts: [String] = []
+        if occasions.contains(.monday) { parts.append("Montags") }
+        if occasions.contains(.thursday) { parts.append("Donnerstags") }
+        if occasions.contains(.whiteDay) { parts.append("Weißer Tag") }
+
+        let occasionPhrase: String
+        switch parts.count {
+        case 0: occasionPhrase = ""
+        case 1: occasionPhrase = parts[0]
+        case 2: occasionPhrase = "\(parts[0]) und \(parts[1])"
+        default: occasionPhrase = "\(parts.dropLast().joined(separator: ", ")) und \(parts.last!)"
+        }
+
+        return "Morgen: \(occasionPhrase) Fasten"
+    }
+
+    /// Just the duration — no restating of the occasion (already the
+    /// notification's title) and no filler sentence. Empty when the
+    /// duration couldn't be computed (missing/malformed Fajr or Maghrib
+    /// for that day) — never an invented estimate.
+    private static func fastingBody(duration: String?) -> String {
+        guard let duration else { return "" }
+        return "Fastendauer: \(duration)"
     }
 
     /// The ISO ("yyyy-MM-dd") date string one calendar day before `iso`,

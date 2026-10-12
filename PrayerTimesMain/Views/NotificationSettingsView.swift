@@ -396,7 +396,36 @@ private struct NotificationInfoSheet: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
 
+                Section("Gebete") {
+                    Text("Die fünf täglichen Pflichtgebete – Fajr, Dhuhr, Asr, Maghrib und Isha – sind für jeden erwachsenen Muslim verpflichtend. Sie gehören zu den fünf Säulen des Islam.")
+                    Text("„Der Islam ist auf fünf Säulen errichtet: dem Glaubensbekenntnis, dem Verrichten des Gebets, dem Entrichten der Zakat, der Pilgerfahrt und dem Fasten im Ramadan.“ – überliefert von Ibn ʿUmar, Sahih al-Bukhari und Sahih Muslim (Hadith-Nummern variieren je nach Druckausgabe).")
+                }
+                .font(.caption)
+                .foregroundStyle(.secondary)
+
+                Section("Karāha") {
+                    Text("„Karāha“ bezeichnet Zeitfenster, in denen freiwillige Gebete nach überlieferter Auffassung unterlassen werden sollen: kurz nach Sonnenaufgang, um die Zeit des Sonnenhöchststands kurz vor Dhuhr, und kurz vor Sonnenuntergang. Die fünf Pflichtgebete sind davon nicht betroffen.")
+                    Text("„Der Gesandte Allahs verbot uns, zu drei Zeiten zu beten oder unsere Toten zu begraben: wenn die Sonne sichtbar aufgeht, bis sie vollständig aufgestiegen ist; wenn sie ihren Höchststand erreicht, bis sie darüber hinweg ist; und wenn sie sich zum Untergang neigt, bis sie vollständig untergegangen ist.“ – überliefert von ʿUqba ibn ʿĀmir al-Juhanī, Sahih Muslim (Hadith-Nummer je nach Ausgabe unterschiedlich).")
+                    Text("Erinnert zu Beginn dreier täglicher Zeitfenster: Sonnenaufgangs-Karāha ab Shuruk (ungefähr 15–20 Minuten), einer kurzen Näherung vor Dhuhr, und einer Näherung kurz vor Maghrib.")
+                    Text("Die Sonnenaufgangs-Karāha beginnt exakt mit Shuruk, nie mit Fajr. Das ist eine andere Zeit als die separate hanafitische Einschränkung für freiwillige Gebete zwischen Fajr und Sonnenaufgang, die hier nicht als Benachrichtigung angeboten wird.")
+                    Text("Das Fenster vor Dhuhr endet exakt mit Dhuhrs Beginn. Das Fenster vor Maghrib beginnt NICHT mit Asr – Asr bleibt bis Maghrib gültig. Alle drei Zeitfenster-Enden/-Beginne sind einstellbare Näherungswerte, keine exakten Grenzen, da keine orts- und tagesgenaue Quelle für den exakten Beginn dieser Phasen vorliegt.")
+                }
+                .font(.caption)
+                .foregroundStyle(.secondary)
+
+                Section("Duha") {
+                    Text("Duha (auch Chasht genannt) ist ein freiwilliges Gebet (Nafl), kein Pflichtgebet. Es wird im späteren Vormittag verrichtet, nachdem die Sonnenaufgangs-Karāha vorüber ist, mit mindestens zwei, üblicherweise vier Rakʿat.")
+                    Text("„Jedem Gelenk eines Menschen obliegt täglich eine Almosengabe … und zwei Rakʿat, die er als Duha betet, genügen dafür.“ – überliefert von Abū Dharr, Sahih Muslim (Hadith-Nummer je nach Ausgabe unterschiedlich).")
+                    Text("Erinnert einmal täglich genau zu Beginn der Duha-Zeit – also zum Ende der Sonnenaufgangs-Karāha.")
+                    Text("Es wird nie während der Sonnenaufgangs-Karāha und nie nach Beginn der Karāha vor Dhuhr erinnert.")
+                }
+                .font(.caption)
+                .foregroundStyle(.secondary)
+
                 Section("Freiwilliges Fasten") {
+                    Text("Freiwilliges Fasten (Nafl) geht über die Pflicht im Ramadan hinaus. Es ist nicht verpflichtend, gilt aber als besonders empfohlen – an Montagen, Donnerstagen und den „Weißen Tagen“ (13., 14., 15. Hijri-Tag jeden Monats).")
+                    Text("„Die Taten werden am Montag und am Donnerstag vorgelegt, und so möchte ich fasten, wenn meine Taten vorgelegt werden.“ – überliefert von Abū Huraira, Sunan at-Tirmidhī (Hadith-Nummer je nach Ausgabe unterschiedlich).")
+                    Text("„Wenn du im Monat [freiwillig] fasten möchtest, so faste am 13., 14. und 15.“ – überliefert von Abū Dharr, Sunan at-Tirmidhī (Hadith-Nummer je nach Ausgabe unterschiedlich).")
                     Text("Die Erinnerung wird am Vorabend des Fastentags nach Maghrib geplant – für einen Montag also nach Maghrib am Sonntag, nicht am Montag selbst.")
                     Text("Während des Ramadan sowie an Eid al-Fitr, Eid al-Adha und den drei Tagen von Tashriq danach wird keine Erinnerung für freiwilliges Fasten geplant.")
                     Text("Fehlen für den Fastentag selbst gültige Fajr- oder Maghrib-Zeiten, wird die Erinnerung ohne Dauerangabe geplant statt eine Dauer zu schätzen.")
@@ -405,6 +434,8 @@ private struct NotificationInfoSheet: View {
                 .foregroundStyle(.secondary)
 
                 Section("Zakat-Stichtag") {
+                    Text("Zakat ist die Pflichtabgabe für wohlhabende Muslime – üblicherweise 2,5 % des zakatpflichtigen Vermögens, das ein Hijri-Jahr lang über dem Nisab-Schwellenwert lag. Sie gehört ebenfalls zu den fünf Säulen des Islam.")
+                    Text("„Und verrichtet das Gebet und entrichtet die Zakat …“ – Qur'an, mehrfach gemeinsam mit dem Gebet genannt, u. a. Sure 2:43.")
                     Text("Gilt für alle Kalendereinträge, die du als Zakat-Stichtag markiert hast. Ist der Schalter in der Übersicht aus, bleiben die Einträge im Kalender sichtbar, aber es wird keine Erinnerung geplant.")
                     Text("Die App berechnet oder prüft keine Zakat – sie erinnert nur an den Termin, den du selbst eingetragen hast.")
                     Text("Bei „Jährlich nach Hijri-Datum wiederholen“ fällt eine Erinnerung in einem Jahr ohne diesen Hijri-Tag (z. B. den 30. eines kürzeren Monats) für dieses eine Jahr ersatzlos aus.")
@@ -412,18 +443,9 @@ private struct NotificationInfoSheet: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
 
-                Section("Karāha") {
-                    Text("Erinnert zu Beginn dreier täglicher Zeitfenster: Sonnenaufgangs-Karāha ab Shuruk (ungefähr 15–20 Minuten), einer kurzen Näherung vor Dhuhr, und einer Näherung kurz vor Maghrib.")
-                    Text("„Karāha\" bezeichnet hier Zeitfenster, die nach überlieferter Auffassung für freiwillige Gebete ungünstig sind. Die fünf Pflichtgebete sind davon nicht betroffen.")
-                    Text("Die Sonnenaufgangs-Karāha beginnt exakt mit Shuruk, nie mit Fajr. Das ist eine andere Zeit als die separate hanafitische Einschränkung für freiwillige Gebete zwischen Fajr und Sonnenaufgang, die hier nicht als Benachrichtigung angeboten wird.")
-                    Text("Das Fenster vor Dhuhr endet exakt mit Dhuhrs Beginn. Das Fenster vor Maghrib beginnt NICHT mit Asr – Asr bleibt bis Maghrib gültig. Alle drei Zeitfenster-Enden/-Beginne sind einstellbare Näherungswerte, keine exakten Grenzen, da keine orts- und tagesgenaue Quelle für den exakten Beginn dieser Phasen vorliegt.")
-                }
-                .font(.caption)
-                .foregroundStyle(.secondary)
-
-                Section("Duha") {
-                    Text("Erinnert einmal täglich genau zu Beginn der Duha-Zeit – also zum Ende der Sonnenaufgangs-Karāha. Duha ist ein freiwilliges Gebet, kein Pflichtgebet.")
-                    Text("Es wird nie während der Sonnenaufgangs-Karāha und nie nach Beginn der Karāha vor Dhuhr erinnert.")
+                Section("Feiertage") {
+                    Text("Ramadan-Beginn: Start des Pflichtfastenmonats. Eid al-Fitr: Fastenbrechen-Fest zum Monatsende. Tag von Arafah/Tag der Hadsch: Höhepunkt der jährlichen Pilgerfahrt. Eid al-Adha: Opferfest. Islamisches Neujahr: Beginn des Hijri-Jahres. Ashura: 10. Muharram. Isra' und Mi'raj: die nächtliche Reise und Himmelfahrt des Propheten.")
+                    Text("Erinnert wahlweise am Vortag, am Feiertag selbst, oder an beiden Tagen, jeweils zur eingestellten Uhrzeit.")
                 }
                 .font(.caption)
                 .foregroundStyle(.secondary)

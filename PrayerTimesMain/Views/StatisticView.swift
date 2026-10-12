@@ -24,6 +24,8 @@ struct StatisticsView: View {
     @State private var cacheFetchedAt: Date?
     @State private var remainingCoverageDays: Int?
 
+    @State private var showClearCacheDialog = false
+
     var body: some View {
         NavigationStack {
             VStack {
@@ -83,6 +85,29 @@ struct StatisticsView: View {
                         CachedPrayerTimesContent()
                     } label: {
                         Label("Gespeicherte Gebetszeiten", systemImage: "tray.full")
+                    }
+                }
+
+                Section {
+                    Button(role: .destructive) {
+                        showClearCacheDialog = true
+                    } label: {
+                        Label("Gesamten Cache löschen", systemImage: "trash")
+                            .frame(maxWidth: .infinity, alignment: .center)
+                    }
+                    .confirmationDialog(
+                        "Gesamten Cache löschen?",
+                        isPresented: $showClearCacheDialog,
+                        titleVisibility: .visible
+                    ) {
+                        Button("Cache löschen", role: .destructive) {
+                            CacheResetService.clearAllCaches()
+                            reload()
+                        }
+
+                        Button("Abbrechen", role: .cancel) { }
+                    } message: {
+                        Text("Dadurch werden alle gespeicherten Gebetszeiten- und Kalenderdaten entfernt.")
                     }
                 }
 

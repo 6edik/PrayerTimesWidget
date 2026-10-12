@@ -46,8 +46,6 @@ struct PrayerSettingsView: View {
     @State private var didLoadInitialValues = false
     @State private var isApplyingCurrentLocation = false
 
-    @State private var showClearCacheDialog = false
-
     /// The TextField's actual binding: clearing the coordinate on edit is
     /// wired here — directly into the one place a person can hand-type
     /// `manualCity` — instead of an `.onChange(of: manualCity)` modifier.
@@ -175,6 +173,19 @@ struct PrayerSettingsView: View {
                         }
                     }
 
+                    // The timezone actually used by the current prayer-time
+                    // calculation (today's cached AlAdhan response for the
+                    // configured location) — never a hardcoded string, and
+                    // never a second, independent timezone source. Moved
+                    // here from the Gebetszeiten page, which no longer
+                    // shows it separately.
+                    HStack {
+                        Text("Zeitzone")
+                        Spacer()
+                        Text(viewModel.todayTimes?.timezone ?? "–")
+                            .foregroundStyle(.secondary)
+                    }
+
                     NavigationLink {
                         CountryPickerView(selection: countryCodeBinding)
                     } label: {
@@ -211,6 +222,14 @@ struct PrayerSettingsView: View {
                         }
                     }
                     .pickerStyle(.segmented)
+
+                    if let coordinate = effectiveCoordinate {
+                        Text(LocationDisplayFormatter.line(
+                            for: PrayerLocation(name: effectiveCity, coordinate: coordinate, source: effectiveSource)
+                        ))
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                    }
 
                     Button {
                         isApplyingCurrentLocation = true
@@ -249,27 +268,6 @@ struct PrayerSettingsView: View {
                         Text(message)
                             .font(.footnote)
                             .foregroundStyle(.red)
-                    }
-
-                    if let coordinate = effectiveCoordinate {
-                        Text(LocationDisplayFormatter.line(
-                            for: PrayerLocation(name: effectiveCity, coordinate: coordinate, source: effectiveSource)
-                        ))
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-                    }
-
-                    // The timezone actually used by the current prayer-time
-                    // calculation (today's cached AlAdhan response for the
-                    // configured location) — never a hardcoded string, and
-                    // never a second, independent timezone source. Moved
-                    // here from the Gebetszeiten page, which no longer
-                    // shows it separately.
-                    HStack {
-                        Text("Zeitzone")
-                        Spacer()
-                        Text(viewModel.todayTimes?.timezone ?? "–")
-                            .foregroundStyle(.secondary)
                     }
                 }
 
@@ -317,27 +315,6 @@ struct PrayerSettingsView: View {
                 Section("Hinweis") {
                     Text("Die API-Werte bleiben im Cache unverändert. Die Minuten-Justierung wird erst bei der Anzeige in App und Widget angewendet.")
                         .foregroundStyle(.secondary)
-                    
-                    Button(role: .destructive) {
-                        showClearCacheDialog = true
-                    } label: {
-                        Label("Gesamten Cache löschen", systemImage: "trash")
-                            .frame(maxWidth: .infinity, alignment: .center)
-                    }
-                    .padding(.top, 8)
-                    .confirmationDialog(
-                        "Gesamten Cache löschen?",
-                        isPresented: $showClearCacheDialog,
-                        titleVisibility: .visible
-                    ) {
-                        Button("Cache löschen", role: .destructive) {
-                            CacheResetService.clearAllCaches()
-                        }
-
-                        Button("Abbrechen", role: .cancel) { }
-                    } message: {
-                        Text("Dadurch werden alle gespeicherten Gebetszeiten- und Kalenderdaten entfernt.")
-                    }
                 }
             }
             .scrollContentBackground(.hidden)

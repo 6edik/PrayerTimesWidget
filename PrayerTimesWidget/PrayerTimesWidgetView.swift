@@ -63,7 +63,7 @@ struct PrayerTimesWidgetView: View {
 
                 smallPrayerRow(
                     icon: PrayerStatusIcon.symbolName(forCanonicalRow: "Shuruk"),
-                    title: "Sunrise",
+                    title: "Shuruk",
                     time: entry.times.shuruk,
                     isActive: highlights.primary == "Shuruk"
                 )
@@ -349,7 +349,7 @@ struct PrayerTimesWidgetView: View {
                     )
 
                     mediumPrayerRow(
-                        title: "Sunrise",
+                        title: "Shuruk",
                         time: entry.times.shuruk,
                         isCurrent: highlights.current == "Shuruk",
                         isNext: highlights.next == "Shuruk"
@@ -763,7 +763,6 @@ struct PrayerTimesWidgetView: View {
 
     private func displayName(for value: String) -> String {
         switch value {
-        case "Shuruk": return "Sunrise"
         case "Dhuhr": return dhuhrTitle
         default: return value
         }

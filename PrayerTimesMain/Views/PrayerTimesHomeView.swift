@@ -303,12 +303,17 @@ struct PrayerTimesHomeView: View {
                         activeSheet = .manualQuery
                     }
 
-                    TopBarActionButton(systemImage: "bell", accessibilityLabel: "Benachrichtigungen") {
-                        activeSheet = .notifications
+                    // "clock.arrow.2.circlepath" instead of the generic
+                    // gear — this sheet (`PrayerSettingsView`, titled
+                    // "Zeitparameter") is specifically about adjusting
+                    // prayer *times* (location/method plus per-prayer
+                    // minute offsets), not general app settings.
+                    TopBarActionButton(systemImage: "clock.arrow.2.circlepath", accessibilityLabel: "Zeitparameter") {
+                        activeSheet = .settings
                     }
 
-                    TopBarActionButton(systemImage: "gearshape", accessibilityLabel: "Einstellungen") {
-                        activeSheet = .settings
+                    TopBarActionButton(systemImage: "bell", accessibilityLabel: "Benachrichtigungen") {
+                        activeSheet = .notifications
                     }
 
                     TopBarActionButton(systemImage: "chart.bar", accessibilityLabel: "Statistiken") {
