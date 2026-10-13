@@ -41,6 +41,11 @@ struct PrayerTimesHomeView: View {
     @State private var hasLoadedInitially = false
 
     @State private var lastThirdWindow: LastThirdOfNightResolver.ResolvedWindow?
+    // Isha delayed past Islamic midnight (see `IshaMidnightKarahaResolver`)
+    // — recomputed alongside `lastThirdWindow` on every load/refresh,
+    // never a second API call. `nil` whenever a required previous/next
+    // cached day is missing.
+    @State private var postMidnightKarahaWindow: IshaMidnightKarahaResolver.ResolvedWindow?
     // Same approximation the widget/notifications already use (see
     // `QiratTimeResolver`'s doc comment) — recomputed alongside
     // `lastThirdWindow` on every load/refresh, never a second API call.
@@ -130,7 +135,8 @@ struct PrayerTimesHomeView: View {
             sunriseKarahaWindow: sunriseKarahaWindow,
             preDhuhrKarahaWindow: preDhuhrKarahaWindow,
             preMaghribKarahaWindow: asrKarahaWindow,
-            lastThirdWindow: lastThirdWindow
+            lastThirdWindow: lastThirdWindow,
+            postMidnightKarahaWindow: postMidnightKarahaWindow
         )
     }
 
@@ -181,6 +187,7 @@ struct PrayerTimesHomeView: View {
                         dhuhrTitle: dhuhrTitle,
                         lastThirdWindow: lastThirdWindow,
                         preMaghribKarahaWindow: asrKarahaWindow,
+                        postMidnightKarahaWindow: postMidnightKarahaWindow,
                         timezoneIdentifier: prayerTimes.timezone
                     )
                 }
@@ -210,10 +217,13 @@ struct PrayerTimesHomeView: View {
                                 icon: PrayerStatusIcon.symbolName(forCanonicalRow: canonicalName),
                                 isActive: isActive,
                                 isExpanded: expandedPrayer == canonicalName,
-                                expandHint: "Letztes Drittel der Nacht anzeigen",
-                                collapseHint: "Letztes Drittel der Nacht ausblenden",
+                                expandHint: "Nachtdetails anzeigen",
+                                collapseHint: "Nachtdetails ausblenden",
                                 onToggle: { toggleExpansion(canonicalName) }
                             ) {
+                                if let postMidnightKarahaWindow {
+                                    karahaDetail(postMidnightKarahaWindow)
+                                }
                                 if let lastThirdWindow {
                                     lastThirdDetail(lastThirdWindow)
                                 }
@@ -464,6 +474,7 @@ struct PrayerTimesHomeView: View {
 
         now = Date()
         lastThirdWindow = LastThirdOfNightResolver.window(store: store, settings: autoSettings)
+        postMidnightKarahaWindow = IshaMidnightKarahaResolver.window(store: store, settings: autoSettings)
         let qiratWindows = QiratTimeResolver.windows(store: store, settings: autoSettings)
         asrKarahaWindow = qiratWindows.lateMaghribKaraha
         sunriseKarahaWindow = qiratWindows.sunriseKaraha
@@ -535,6 +546,21 @@ struct PrayerTimesHomeView: View {
     /// every prayer between them is equally affected — it is only ever
     /// this one concretely computed window.
     private func karahaDetail(_ window: QiratTimeResolver.ApproximateWindow) -> some View {
+        Text("Karāha von \(clockText(window.start, timezoneIdentifier: window.timezoneIdentifier)) bis \(clockText(window.end, timezoneIdentifier: window.timezoneIdentifier))")
+            .font(.subheadline)
+            .foregroundStyle(.secondary)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 10)
+            .background(Color.secondary.opacity(0.08))
+            .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+    }
+
+    /// Same compact style as `karahaDetail` above, for the post-midnight
+    /// Isha Karāha (`IshaMidnightKarahaResolver.ResolvedWindow` — an exact
+    /// midpoint boundary, not an `QiratTimeResolver.ApproximateWindow`, so
+    /// a separate overload rather than a shared parameter type).
+    private func karahaDetail(_ window: IshaMidnightKarahaResolver.ResolvedWindow) -> some View {
         Text("Karāha von \(clockText(window.start, timezoneIdentifier: window.timezoneIdentifier)) bis \(clockText(window.end, timezoneIdentifier: window.timezoneIdentifier))")
             .font(.subheadline)
             .foregroundStyle(.secondary)
@@ -719,6 +745,10 @@ private struct CurrentStatusCard: View {
     /// Only used to locate the Karāha-vor-Maghrib boundary marker on the
     /// bar when `status.kind == .asr` — reused as-is, never recomputed.
     let preMaghribKarahaWindow: QiratTimeResolver.ApproximateWindow?
+    /// Only used to locate the post-midnight Isha Karāha's boundary
+    /// marker on the bar when `status.kind == .isha` — reused as-is,
+    /// never recomputed.
+    let postMidnightKarahaWindow: IshaMidnightKarahaResolver.ResolvedWindow?
     /// The prayer location's own timezone — never the device's — for
     /// formatting `status.start`/`status.end`/the boundary marker as
     /// clock times.
@@ -735,18 +765,21 @@ private struct CurrentStatusCard: View {
     /// The fixed prayer/status sequence the app always walks in (…→
     /// Karāha → Duha → Karāha vor Dhuhr → Dhuhr → Asr → Karāha vor
     /// Maghrib → Maghrib → Isha → Fajr → …), so the bar's trailing-edge
-    /// label never needs a second window lookup.
+    /// label never needs a second window lookup. Duha's own trailing
+    /// label deliberately skips straight to Dhuhr rather than naming the
+    /// Karāha vor Dhuhr in between — a caution period is never shown as
+    /// the destination of a countdown, only an actual prayer.
     private var trailingLabel: String {
         switch status.kind {
         case .fajr: return "Shuruk"
         case .sunriseKaraha: return "Duha"
-        case .duha: return "Karāha"
+        case .duha: return dhuhrTitle
         case .preDhuhrKaraha: return dhuhrTitle
         case .dhuhr: return "Asr"
         case .asr: return "Maghrib"
         case .preMaghribKaraha: return "Maghrib"
         case .maghrib: return "Isha"
-        case .isha, .lastThirdOfNight: return "Fajr"
+        case .isha, .postMidnightKaraha, .lastThirdOfNight: return "Fajr"
         }
     }
 
@@ -769,14 +802,14 @@ private struct CurrentStatusCard: View {
     private var accentColor: Color {
         switch status.additionalKind {
         case .lastThirdOfNight: return Self.lastThirdAccentColor
-        case .preMaghribKaraha: return .secondary
+        case .preMaghribKaraha, .postMidnightKaraha: return .secondary
         default: break
         }
 
         switch status.kind {
         case .lastThirdOfNight: return Self.lastThirdAccentColor
         case .fajr, .dhuhr, .asr, .maghrib, .isha, .duha: return .orange
-        case .sunriseKaraha, .preDhuhrKaraha, .preMaghribKaraha: return .secondary
+        case .sunriseKaraha, .preDhuhrKaraha, .preMaghribKaraha, .postMidnightKaraha: return .secondary
         }
     }
 
@@ -793,36 +826,37 @@ private struct CurrentStatusCard: View {
         !isObligatory && !CurrentPrayerStatusDisplay.isKaraha(status.kind)
     }
 
-    /// When "Letztes Drittel" (during Isha) or the Karāha vor Maghrib
-    /// (during Asr) begins. Keyed off `status.kind` — not `additionalKind`
-    /// — so this marker always shows where the boundary falls for the
-    /// *whole* Isha/Asr window, not only once that sub-window has already
-    /// started. Purely a time marker on the bar now — it no longer draws
+    /// Every boundary marker to show on the bar for the current
+    /// `status.kind` — "Letztes Drittel" and the post-midnight Isha
+    /// Karāha both fall inside an active Isha window (midnight always
+    /// comes before the last third's own start), or the Karāha vor
+    /// Maghrib during Asr. Keyed off `status.kind` — not `additionalKind`
+    /// — so markers always show where each boundary falls for the *whole*
+    /// Isha/Asr window, not only once that sub-window has already
+    /// started. Purely time markers on the bar now — they no longer draw
     /// a separate filled zone; only the bar's own fill color (see
-    /// `accentColor`) changes once the boundary is actually reached.
-    private var markerStart: Date? {
+    /// `accentColor`) changes once a boundary is actually reached.
+    private var markers: [(fraction: Double, label: String)] {
         switch status.kind {
-        case .isha: return lastThirdWindow?.start
-        case .asr: return preMaghribKarahaWindow?.start
-        default: return nil
+        case .isha:
+            return [postMidnightKarahaWindow?.start, lastThirdWindow?.start].compactMap(marker(at:))
+        case .asr:
+            return [preMaghribKarahaWindow?.start].compactMap(marker(at:))
+        default:
+            return []
         }
     }
 
-    /// Where `markerStart` falls as a 0...1 fraction of the bar. `nil`
-    /// whenever there's no boundary to show.
-    private var markerFraction: Double? {
-        guard let markerStart else { return nil }
+    /// `date` as a 0...1 fraction of the bar, paired with its clock-time
+    /// label. `nil` whenever `date` itself is `nil` or the bar's own span
+    /// is degenerate.
+    private func marker(at date: Date?) -> (fraction: Double, label: String)? {
+        guard let date else { return nil }
         let total = status.end.timeIntervalSince(status.start)
         guard total > 0 else { return nil }
-        let offset = markerStart.timeIntervalSince(status.start)
-        return min(max(offset / total, 0), 1)
-    }
-
-    /// The clock time `markerStart` falls at — never shown without a
-    /// matching position on the bar.
-    private var markerLabel: String? {
-        guard let markerStart else { return nil }
-        return clockText(markerStart)
+        let offset = date.timeIntervalSince(status.start)
+        let fraction = min(max(offset / total, 0), 1)
+        return (fraction, clockText(date))
     }
 
     var body: some View {
@@ -862,8 +896,7 @@ private struct CurrentStatusCard: View {
             StatusProgressBar(
                 progress: status.progress,
                 accentColor: accentColor,
-                markerFraction: markerFraction,
-                markerLabel: markerLabel
+                markers: markers
             )
 
             HStack {
@@ -953,19 +986,19 @@ private struct CurrentStatusCard: View {
 /// (`PrayerStatusIcon`) already conveys "night" where appropriate, so
 /// this bar never duplicates that with separate dots, and no filled
 /// highlighted sub-zone either — only the fill's own color changes once
-/// a sub-window is actually active; the tick is a plain time marker, not
+/// a sub-window is actually active; each tick is a plain time marker, not
 /// a colored zone. Purely presentational — every position is derived
-/// from the already-resolved `progress`/`markerFraction`, no calculation
-/// of its own.
+/// from the already-resolved `progress`/`markers`, no calculation of its
+/// own.
 private struct StatusProgressBar: View {
     let progress: Double
     let accentColor: Color
-    /// Where an upcoming boundary (e.g. the start of "Letztes Drittel")
-    /// falls as a 0...1 fraction of the bar. `nil` shows no marker at all.
-    var markerFraction: Double? = nil
-    /// Clock time `markerFraction` corresponds to, shown as a small tag
-    /// above the tick. `nil` whenever `markerFraction` itself is `nil`.
-    var markerLabel: String? = nil
+    /// Every upcoming boundary to mark (e.g. where "Letztes Drittel"
+    /// begins) — each as a 0...1 fraction of the bar paired with its
+    /// clock-time label. Empty shows no marker at all; an active Isha
+    /// window can show two at once (midnight, then the last third's own
+    /// start).
+    var markers: [(fraction: Double, label: String)] = []
 
     private let trackHeight: CGFloat = 10
     private let thumbDiameter: CGFloat = 14
@@ -984,20 +1017,20 @@ private struct StatusProgressBar: View {
                     .fill(accentColor)
                     .frame(width: max(width * clampedProgress, trackHeight), height: trackHeight)
 
-                if let markerFraction {
+                ForEach(markers.indices, id: \.self) { index in
+                    let marker = markers[index]
+
                     Rectangle()
                         .fill(Color.primary.opacity(0.6))
                         .frame(width: 1.5, height: trackHeight + 6)
-                        .offset(x: width * markerFraction, y: 0)
-                }
+                        .offset(x: width * marker.fraction, y: 0)
 
-                if let markerFraction, let markerLabel {
-                    Text(markerLabel)
+                    Text(marker.label)
                         .font(.system(size: 9, weight: .semibold))
                         .foregroundStyle(.secondary)
                         .fixedSize()
                         .offset(
-                            x: min(max(width * markerFraction - 14, 0), max(width - 30, 0)),
+                            x: min(max(width * marker.fraction - 14, 0), max(width - 30, 0)),
                             y: -12
                         )
                 }

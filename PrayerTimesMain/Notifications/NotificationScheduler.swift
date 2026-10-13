@@ -446,6 +446,26 @@ struct NotificationScheduler {
         return formatter.string(from: previous)
     }
 
+    /// The mirror of `previousISODate` above — one calendar day *after*
+    /// `iso`, same timezone-independent label arithmetic.
+    private func nextISODate(_ iso: String) -> String? {
+        var utc = Calendar(identifier: .gregorian)
+        utc.timeZone = TimeZone(identifier: "UTC")!
+
+        let formatter = DateFormatter()
+        formatter.calendar = utc
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = utc.timeZone
+        formatter.dateFormat = "yyyy-MM-dd"
+
+        guard
+            let date = formatter.date(from: iso),
+            let next = utc.date(byAdding: .day, value: 1, to: date)
+        else { return nil }
+
+        return formatter.string(from: next)
+    }
+
     // MARK: - Zakat candidates
 
     /// Reminders for the user's own Zakat-due-date rule — configured under
@@ -526,17 +546,23 @@ struct NotificationScheduler {
     // MARK: - Karāha candidates
 
     /// One candidate per cached day for the Sonnenaufgangs-Karāha window
-    /// (starts exactly at Shuruk, never Fajr), and one for the Karāha-vor-
-    /// Maghrib **approximation** (see `QiratTimeResolver`'s doc comment)
-    /// — firing right at each window's own start. Both share the same
-    /// compact title ("Karāha") and the same one-sentence body
-    /// ("Gebetspause bis HH:mm.", the window's own end time) — no fiqh
-    /// explanation, no full start–end span, in the push banner (that
-    /// belongs in the settings' info view instead). Neither body mentions
-    /// Asr at all, so neither can be read as claiming Asr itself becomes
-    /// impermissible at some point — Asr's own valid time still runs all
-    /// the way to Maghrib. Only scheduled where the approximation is
-    /// latitude-plausible. A day with no resolvable window
+    /// (starts exactly at Shuruk, never Fajr), the Karāha-vor-Maghrib
+    /// **approximation** (see `QiratTimeResolver`'s doc comment), the
+    /// Karāha vor Dhuhr, and the post-midnight Isha Karāha (see
+    /// `IshaMidnightKarahaResolver`) — firing right at each window's own
+    /// start. The first three share the same compact title ("Karāha") and
+    /// the same one-sentence body ("Gebetspause bis HH:mm.", the window's
+    /// own end time) — no fiqh explanation, no full start–end span, in the
+    /// push banner (that belongs in the settings' info view instead). The
+    /// post-midnight Isha Karāha keeps the same title but a different body
+    /// — it's about the obligatory Isha prayer itself, not a voluntary-
+    /// prayer caution window. None of the four bodies mentions Asr/Dhuhr
+    /// by name, so none can be read as claiming the obligatory prayer
+    /// itself becomes impermissible at some point — Asr's own valid time
+    /// still runs all the way to Maghrib, same for Dhuhr. The three
+    /// fixed-minute approximations are only scheduled where latitude-
+    /// plausible; the post-midnight Isha Karāha (an exact midpoint, not an
+    /// approximation) is scheduled at any latitude. A day with no resolvable window
     /// (missing/malformed cached times, or an out-of-range latitude)
     /// simply contributes nothing for that day, never a guessed time.
     ///
@@ -604,6 +630,50 @@ struct NotificationScheduler {
                     title: "Karāha",
                     body: "Gebetspause bis \(endClock)."
                 ))
+            }
+
+            // The post-midnight Isha Karāha spans into the *next* cached
+            // day (Fajr belongs to tomorrow, not today) — unlike the three
+            // windows above, so it needs that day's own cached data too,
+            // the same `IshaMidnightKarahaCalculator` arithmetic
+            // `IshaMidnightKarahaResolver` wraps for "today". Both
+            // endpoints are exact (today's Maghrib, tomorrow's Fajr), so
+            // — unlike the other three — this is never latitude-gated.
+            // This is also the one Karāha candidate about an *obligatory*
+            // prayer (Isha itself, delayed past the midpoint) rather than
+            // a voluntary-prayer caution window, hence the different body
+            // text.
+            if let nextISO = nextISODate(isoDate),
+               let nextDay = cachedDays[nextISO],
+               let nextDayStart = PrayerMomentResolver.dayStart(isoDate: nextISO, timezoneIdentifier: nextDay.times.timezone) {
+                var locationCalendar = Calendar(identifier: .gregorian)
+                locationCalendar.timeZone = TimeZone(identifier: day.times.timezone) ?? .current
+                let adjusted = day.times.applyingAdjustmentsWithDayOffsets(autoSettings.adjustments)
+                let maghrib = PrayerTimeAdjuster.date(
+                    forAdjusted: .init(value: adjusted.times.maghrib, dayOffset: adjusted.dayOffsets.maghrib),
+                    base: dayStart,
+                    calendar: locationCalendar
+                )
+
+                var nextLocationCalendar = Calendar(identifier: .gregorian)
+                nextLocationCalendar.timeZone = TimeZone(identifier: nextDay.times.timezone) ?? .current
+                let nextAdjusted = nextDay.times.applyingAdjustmentsWithDayOffsets(autoSettings.adjustments)
+                let followingFajr = PrayerTimeAdjuster.date(
+                    forAdjusted: .init(value: nextAdjusted.times.fajr, dayOffset: nextAdjusted.dayOffsets.fajr),
+                    base: nextDayStart,
+                    calendar: nextLocationCalendar
+                )
+
+                if let maghrib, let followingFajr,
+                   let postMidnight = IshaMidnightKarahaCalculator.window(maghrib: maghrib, followingFajr: followingFajr) {
+                    let endClock = FastingDurationCalculator.clockString(postMidnight.end, timezoneIdentifier: nextDay.times.timezone)
+                    result.append(NotificationCandidate(
+                        identifier: "\(Self.qiratIdentifierPrefix)postMidnightKaraha.\(isoDate)",
+                        fireDate: postMidnight.start,
+                        title: "Karāha",
+                        body: "Isha sollte jetzt gebetet werden – spätestens bis Fajr um \(endClock)."
+                    ))
+                }
             }
         }
 

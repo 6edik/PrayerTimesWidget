@@ -9,12 +9,12 @@ nonisolated enum CurrentPrayerStatusDisplay {
     /// `dhuhrTitle` is passed in rather than recomputed here so every
     /// caller keeps using the one already-resolved Jum'ah/Dhuhr label
     /// (`PrayerDisplayNaming.dhuhrLabel`) for the correct calendar day.
-    /// All three Karāha kinds deliberately share the bare "Karāha" label,
+    /// All four Karāha kinds deliberately share the bare "Karāha" label,
     /// with no further qualifier — knowing it's a Karāha window is enough.
     static func label(for kind: CurrentPrayerStatusCalculator.Kind, dhuhrTitle: String) -> String {
         switch kind {
         case .fajr: return "Fajr"
-        case .sunriseKaraha, .preDhuhrKaraha, .preMaghribKaraha: return "Karāha"
+        case .sunriseKaraha, .preDhuhrKaraha, .preMaghribKaraha, .postMidnightKaraha: return "Karāha"
         case .duha: return "Duha"
         case .dhuhr: return dhuhrTitle
         case .asr: return "Asr"
@@ -32,17 +32,17 @@ nonisolated enum CurrentPrayerStatusDisplay {
     static func isObligatory(_ kind: CurrentPrayerStatusCalculator.Kind) -> Bool {
         switch kind {
         case .fajr, .dhuhr, .asr, .maghrib, .isha: return true
-        case .sunriseKaraha, .duha, .preDhuhrKaraha, .preMaghribKaraha, .lastThirdOfNight: return false
+        case .sunriseKaraha, .duha, .preDhuhrKaraha, .preMaghribKaraha, .postMidnightKaraha, .lastThirdOfNight: return false
         }
     }
 
-    /// `true` for all three Karāha kinds. A Karāha window is a caution
+    /// `true` for all four Karāha kinds. A Karāha window is a caution
     /// period, not a voluntary-prayer opportunity — it must never be
     /// labeled "freiwillig" the way Duha or the last third of the night
     /// are.
     static func isKaraha(_ kind: CurrentPrayerStatusCalculator.Kind) -> Bool {
         switch kind {
-        case .sunriseKaraha, .preDhuhrKaraha, .preMaghribKaraha: return true
+        case .sunriseKaraha, .preDhuhrKaraha, .preMaghribKaraha, .postMidnightKaraha: return true
         case .fajr, .duha, .dhuhr, .asr, .maghrib, .isha, .lastThirdOfNight: return false
         }
     }

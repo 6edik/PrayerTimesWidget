@@ -124,6 +124,14 @@ struct Provider: TimelineProvider {
             dates.insert(normalizedTimelineDate(lastThird.start))
         }
 
+        // Same idea for the post-midnight Isha Karāha: only its own start
+        // (Islamic midnight) — its end always coincides with Fajr, which
+        // is already a prayer-moment boundary below.
+        if let postMidnightKaraha = IshaMidnightKarahaResolver.window(now: now, store: store, settings: settings),
+           postMidnightKaraha.start > now {
+            dates.insert(normalizedTimelineDate(postMidnightKaraha.start))
+        }
+
         // Same idea for the Karāha boundaries: only their start/end
         // instants, so the widget's "active now" indicator flips exactly
         // on time without periodic ticks.

@@ -1,14 +1,27 @@
 import SwiftUI
 import WidgetKit
 
-/// A simple, three-line lock-screen layout: "{Gebet}: {Uhrzeit}" bold, a
-/// subdued "Noch bis {nächstes Gebet}" line, and the remaining duration in
-/// words (e.g. "8 Std. 53 Min.") — a plainer alternative to the six-prayer
-/// `lockRectangularView` in `PrayerTimesWidgetView`, for anyone who just
-/// wants "what's next and how long" at a glance. Deliberately a worded
-/// duration, not a live-ticking timer — this layout refreshes at the same
-/// timeline cadence as every other widget family here (see `Provider`),
-/// which is already dense enough around prayer/Karāha boundaries.
+/// A simple, three-line lock-screen layout: "{nächstes Gebet}: {Uhrzeit}"
+/// bold, a subdued "Noch bis {nächstes Gebet}" line, and the remaining
+/// duration as a live countdown (e.g. "5:14:36") — a plainer alternative
+/// to the six-prayer `lockRectangularView` in `PrayerTimesWidgetView`, for
+/// anyone who just wants "what's next and how long" at a glance. The bold
+/// line names the *upcoming* prayer (not the one currently active) —
+/// the duration underneath is how much longer the current prayer's own
+/// window still has left, which is exactly the time remaining until that
+/// upcoming prayer starts.
+///
+/// `Text(_:style:.timer)` — not a worded string computed once from
+/// `entry.date` — exactly like `lockInlineView`/`lockCircularView` in
+/// `PrayerTimesWidgetView` already do: a plain string only reflects the
+/// instant its timeline entry was built, and timeline entries here are
+/// only built at prayer/Karāha boundaries (see `Provider`), which can be
+/// hours apart — so a static duration visibly goes stale (or looks
+/// "stuck"/wrong) until WidgetKit happens to swap in the next entry.
+/// Removing and re-adding the widget forces a fresh snapshot for "now",
+/// which is exactly why that made it look correct again. `Text(_:style:)`
+/// is one of the few views WidgetKit itself keeps animating between
+/// entries, so this never goes stale.
 struct PrayerCountdownLockWidgetView: View {
     var entry: Provider.Entry
 
@@ -21,7 +34,7 @@ struct PrayerCountdownLockWidgetView: View {
                 // `PrayerTimesWidgetView`) — never a different font family
                 // just because this is a separate widget kind.
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("\(displayName(for: window.currentName)): \(window.currentTime)")
+                    Text("\(displayName(for: window.nextName)): \(window.nextTime)")
                         .font(.system(size: 15, weight: .semibold, design: .serif))
                         .lineLimit(1)
                         .minimumScaleFactor(0.8)
@@ -35,9 +48,10 @@ struct PrayerCountdownLockWidgetView: View {
                     // Orange matches the "Noch"/remaining-time countdown
                     // color already used everywhere else (e.g. the medium
                     // widget's own countdown).
-                    Text(formattedDuration(window.end.timeIntervalSince(entry.date)))
+                    Text(window.end, style: .timer)
                         .font(.system(size: 15, weight: .bold, design: .serif))
                         .foregroundStyle(Color.orange.opacity(0.95))
+                        .monospacedDigit()
                         .lineLimit(1)
                         .minimumScaleFactor(0.8)
                 }
@@ -82,16 +96,5 @@ struct PrayerCountdownLockWidgetView: View {
         case "Dhuhr": return dhuhrTitle
         default: return value
         }
-    }
-
-    /// "8 Std. 53 Min." — never negative (clamped to 0 first), since
-    /// `window.end` is always strictly after `entry.date` by construction
-    /// (see `PrayerWindowResolver`), but clamping here keeps this function
-    /// honest on its own regardless of caller.
-    private func formattedDuration(_ duration: TimeInterval) -> String {
-        let totalMinutes = Int((max(duration, 0) / 60).rounded())
-        let hours = totalMinutes / 60
-        let minutes = totalMinutes % 60
-        return minutes == 0 ? "\(hours) Std." : "\(hours) Std. \(minutes) Min."
     }
 }

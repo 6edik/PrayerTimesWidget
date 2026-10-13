@@ -7,21 +7,19 @@ import WidgetKit
 /// "☀︎ DHR 12:15 · 2:45:10"). The `.accessoryRectangular` counterpart to
 /// this same data is `PrayerCountdownLockWidgetView`; this one is just
 /// the single-line version for whoever wants it inline instead.
-/// `Text(Image(systemName:))` embeds the SF Symbol inline with the text —
-/// the WidgetKit-supported way to mix a glyph into an otherwise plain
-/// `Text`/`+`-concatenated line — and `Text(_, style: .timer)` keeps the
-/// countdown ticking live without any extra timeline entries, the same
-/// pattern every other countdown in this app already uses (see
-/// `PrayerTimesWidgetView`).
+/// Interpolating `Image(systemName:)` into the `Text` string embeds the
+/// SF Symbol inline with the text — the WidgetKit-supported way to mix a
+/// glyph into an otherwise plain line — and interpolating the date with
+/// `style: .timer` keeps the countdown ticking live without any extra
+/// timeline entries, the same pattern every other countdown in this app
+/// already uses (see `PrayerTimesWidgetView`).
 struct PrayerNextLockWidgetView: View {
     var entry: Provider.Entry
 
     var body: some View {
         Group {
             if let window = resolvedWindow() {
-                Text(Image(systemName: PrayerStatusIcon.symbolName(forCanonicalRow: window.currentName)))
-                    + Text(" \(shortLabel(for: window.currentName)) \(window.currentTime) · ")
-                    + Text(window.end, style: .timer)
+                Text("\(Image(systemName: PrayerStatusIcon.symbolName(forCanonicalRow: window.currentName))) \(shortLabel(for: window.currentName)) \(window.currentTime) · \(window.end, style: .timer)")
             } else {
                 Text("Keine Daten")
             }

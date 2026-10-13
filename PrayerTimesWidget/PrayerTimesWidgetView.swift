@@ -9,6 +9,11 @@ struct PrayerTimesWidgetView: View {
     private let store = SharedPrayerTimesStore()
     private let settingsStore = SharedPrayerSettingsStore()
 
+    /// Same light-orange value `CurrentStatusCard` uses on the
+    /// Gebetszeiten page for the last third of the night — visibly
+    /// lighter than, but still clearly part of, the normal orange accent.
+    private static let lastThirdAccentColor = Color(red: 1.0, green: 0.75, blue: 0.3)
+
     var body: some View {
         Group {
             switch family {
@@ -49,7 +54,7 @@ struct PrayerTimesWidgetView: View {
             .lineLimit(1)
 
             Divider()
-                .overlay(Color.white.opacity(0.10))
+                .overlay(Color.primary.opacity(0.10))
                 .padding(.top, 8)
                 .padding(.bottom, 10)
 
@@ -111,7 +116,7 @@ struct PrayerTimesWidgetView: View {
             Image(systemName: icon)
                 .font(.system(size: 10, weight: .medium))
                 .frame(width: 16, alignment: .leading)
-                .foregroundStyle(isActive ? .white : Color.white.opacity(0.72))
+                .foregroundStyle(isActive ? .primary : Color.primary.opacity(0.72))
 
             // No `Spacer()` here anymore — it was eating into the title's
             // own width, which is exactly what caused "Maghrib" (the
@@ -123,13 +128,13 @@ struct PrayerTimesWidgetView: View {
                 .lineLimit(1)
                 .minimumScaleFactor(0.8)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .foregroundStyle(isActive ? .white : Color.white.opacity(0.72))
+                .foregroundStyle(isActive ? .primary : Color.primary.opacity(0.72))
 
             Text(time)
                 .font(.system(size: 13, weight: isActive ? .semibold : .regular, design: .serif))
                 .monospacedDigit()
                 .frame(maxWidth: .infinity, alignment: .trailing)
-                .foregroundStyle(isActive ? .white : Color.white.opacity(0.72))
+                .foregroundStyle(isActive ? .primary : Color.primary.opacity(0.72))
         }
     }
 
@@ -184,6 +189,10 @@ struct PrayerTimesWidgetView: View {
                 let status = currentStatus(window: window)
                 let isObligatory = status.map { CurrentPrayerStatusDisplay.isObligatory($0.kind) } ?? true
                 let isKaraha = status.map { CurrentPrayerStatusDisplay.isKaraha($0.kind) } ?? false
+                // True whether the last third is the standalone main
+                // status or riding along with Isha as `additionalKind` —
+                // either way, the progress bar should turn light orange.
+                let isLastThirdActive = status?.kind == .lastThirdOfNight || status?.additionalKind == .lastThirdOfNight
                 let displayStart = status?.start ?? window.start
                 let displayEnd = status?.end ?? window.end
                 let mainLabel = status.map { CurrentPrayerStatusDisplay.label(for: $0.kind, dhuhrTitle: dhuhrTitle) } ?? displayName(for: window.currentName)
@@ -192,13 +201,17 @@ struct PrayerTimesWidgetView: View {
                     return "\(mainLabel) · \(CurrentPrayerStatusDisplay.label(for: additionalKind, dhuhrTitle: dhuhrTitle))"
                 }()
                 // After the sunrise Karāha, the next relevant state is
-                // Duha; after Duha itself, it's the Karāha vor Dhuhr —
-                // every other state's "next" stays the actual next
-                // obligatory prayer, exactly as before.
+                // Duha. After Duha itself, the next *countdown target* is
+                // deliberately the actual next obligatory prayer — never
+                // the Karāha vor Dhuhr in between, since a caution period
+                // is not something to count down "bis" (the Karāha vor
+                // Dhuhr still gets shown as the main status in its own
+                // right once it becomes active; it's only skipped here as
+                // Duha's destination). Every other state's "next" stays
+                // the actual next obligatory prayer, exactly as before.
                 let nextLabel: String = {
                     switch status?.kind {
                     case .sunriseKaraha: return "Duha"
-                    case .duha: return "Karāha"
                     default: return displayName(for: window.nextName)
                     }
                 }()
@@ -230,45 +243,47 @@ struct PrayerTimesWidgetView: View {
                                 .foregroundStyle(Color.orange.opacity(0.85))
                         }
 
-                        HStack(spacing: 5) {
-                            // No `.frame(maxWidth: .infinity)` on either
-                            // Text here: that modifier on the time below
-                            // used to claim space ahead of the label,
-                            // which is exactly what truncated "Maghrib"
-                            // (the longest prayer name) to "Magh…" once it
-                            // became bold (the active status). Both Texts
-                            // now just take their own natural width.
-                            Text(combinedLabel)
-                                .font(.system(size: 15, weight: .semibold, design: .serif))
-                                .lineLimit(1)
-                                .minimumScaleFactor(0.8)
-                                .foregroundStyle(.white)
+                        // Label stacked above the time instead of sharing
+                        // a row with it: next to the bold 18pt time, the
+                        // longer combined labels (e.g. "Isha · Letztes
+                        // Drittel der Nacht") had no room and truncated to
+                        // a few characters. Full width now goes to the
+                        // label on its own line.
+                        Text(combinedLabel)
+                            .font(.system(size: 15, weight: .semibold, design: .serif))
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.7)
+                            .foregroundStyle(.primary)
 
-                            Text(clockText(displayStart, timezoneIdentifier: window.timezoneIdentifier))
-                                .font(.system(size: 18, weight: .bold, design: .serif))
-                                .monospacedDigit()
-                                .foregroundStyle(.white)
-                        }
+                        Text(clockText(displayStart, timezoneIdentifier: window.timezoneIdentifier))
+                            .font(.system(size: 18, weight: .bold, design: .serif))
+                            .monospacedDigit()
+                            .foregroundStyle(.primary)
                     }
 
                     VStack(alignment: .leading, spacing: 2) {
-                        HStack(spacing: 0) {
-                            Text("Noch")
-                                .font(.system(size: 11, weight: .medium, design: .serif))
-                                .foregroundStyle(Color.white.opacity(0.68))
+                        let markerFractions = progressMarkerFractions(status: status, displayStart: displayStart, displayEnd: displayEnd)
 
-                            Spacer(minLength: 25)
-
+                        // Countdown and destination always stay side by
+                        // side ("3:14:36 bis Maghrib") — the destination
+                        // never drops to a line of its own below the
+                        // timer. The timer keeps layout priority so it's
+                        // never the one that shrinks; the destination
+                        // label scales down instead of wrapping or
+                        // clipping when the combination is tight.
+                        HStack(spacing: 5) {
                             Text(displayEnd, style: .timer)
                                 .font(.system(size: 18, weight: .bold, design: .serif))
                                 .monospacedDigit()
                                 .foregroundStyle(Color.orange.opacity(0.95))
-                        }
-                        .frame(maxWidth: .infinity)
+                                .layoutPriority(1)
 
-                        Text("bis \(nextLabel)")
-                            .font(.system(size: 11, weight: .medium, design: .serif))
-                            .foregroundStyle(Color.white.opacity(0.68))
+                            Text("bis \(nextLabel)")
+                                .font(.system(size: 11, weight: .medium, design: .serif))
+                                .foregroundStyle(Color.primary.opacity(0.68))
+                                .lineLimit(1)
+                                .minimumScaleFactor(0.6)
+                        }
 
                         // A real time-driven control instead of a
                         // `GeometryReader`/`Capsule` whose width is only
@@ -284,12 +299,38 @@ struct PrayerTimesWidgetView: View {
                         // `displayStart...displayEnd` span as the countdown
                         // above (Karāha/Duha's own bounds when active),
                         // never the raw Shuruk-to-Dhuhr span.
-                        ProgressView(timerInterval: displayStart...displayEnd, countsDown: false) {
-                            EmptyView()
-                        } currentValueLabel: {
-                            EmptyView()
+                        //
+                        // The boundary ticks overlaid on top (e.g. where
+                        // "Letztes Drittel" begins) mirror the Gebetszeiten
+                        // page's own bar markers, just without a clock-time
+                        // label — only the tick itself, kept to the plain
+                        // positions a `GeometryReader` can compute once
+                        // (static marks, unlike the live-animating fill
+                        // above) without needing periodic timeline entries.
+                        ZStack(alignment: .leading) {
+                            ProgressView(timerInterval: displayStart...displayEnd, countsDown: false) {
+                                EmptyView()
+                            } currentValueLabel: {
+                                EmptyView()
+                            }
+                            .tint(isLastThirdActive ? Self.lastThirdAccentColor : accent)
+
+                            GeometryReader { proxy in
+                                ForEach(markerFractions.indices, id: \.self) { index in
+                                    // `.position` centers the tick on the
+                                    // bar's own vertical midline, so the
+                                    // overhang above and below is always
+                                    // identical by construction — never a
+                                    // hand-tuned offset that only happens
+                                    // to look centered at one specific bar
+                                    // height.
+                                    Rectangle()
+                                        .fill(Color.primary.opacity(0.35))
+                                        .frame(width: 1.2, height: 10)
+                                        .position(x: proxy.size.width * markerFractions[index], y: proxy.size.height / 2)
+                                }
+                            }
                         }
-                        .tint(accent)
                         .frame(height: 8)
 
                         HStack {
@@ -298,35 +339,26 @@ struct PrayerTimesWidgetView: View {
                             Text(nextLabel)
                         }
                         .font(.system(size: 10, weight: .medium, design: .serif))
-                        .foregroundStyle(Color.white.opacity(0.48))
+                        .foregroundStyle(Color.primary.opacity(0.48))
                     }
 
-                    // Grouped tightly (spacing 3) and separately from the
-                    // block above (spacing 10, inherited from the parent
-                    // VStack): these are two secondary status lines, not
-                    // core timeline info, so when both appear at once they
-                    // should read as one compact cluster instead of each
-                    // claiming a full "row" of vertical space — the
-                    // priority order from lowest to highest space claim is
-                    // current/next prayer, then the timeline, then this
-                    // cluster (letztes Drittel always, Karāha only when
-                    // actually active).
+                    // The last third of the night no longer gets its own
+                    // "Letztes Drittel xx:xx–xx:xx" text line — the
+                    // progress bar above already turns light orange
+                    // (`isLastThirdActive`) the moment it's active, so a
+                    // separate always-on line became redundant.
                     VStack(alignment: .leading, spacing: 3) {
-                        if let lastThird = lastThirdOfNightWindow() {
-                            Text("Letztes Drittel \(clockText(lastThird.start, timezoneIdentifier: lastThird.timezoneIdentifier))–\(clockText(lastThird.end, timezoneIdentifier: lastThird.timezoneIdentifier))")
-                                .font(.system(size: 9, weight: .medium, design: .serif))
-                                .foregroundStyle(Color.white.opacity(0.55))
-                                .lineLimit(1)
-                                .minimumScaleFactor(0.8)
-                        }
-
                         // Any active Karāha window is already shown as the
                         // main status above (`combinedLabel`, with its own
                         // "vor Dhuhr"/"vor Maghrib"/"nach Shuruk"
-                        // qualifier) — never the exact same information
-                        // twice here.
+                        // qualifier) — either as `status.kind` itself (the
+                        // Karāha vor Dhuhr as the main status) or riding
+                        // along as `additionalKind` (e.g. "Asr · Karāha"
+                        // once the Karāha vor Maghrib starts) — never the
+                        // exact same information twice down here.
                         let isKarahaStatus = status.map { CurrentPrayerStatusDisplay.isKaraha($0.kind) } ?? false
-                        if let qiratLabel = activeQiratLabel(), !isKarahaStatus {
+                        let additionalIsKaraha = status?.additionalKind.map { CurrentPrayerStatusDisplay.isKaraha($0) } ?? false
+                        if let qiratLabel = activeQiratLabel(), !isKarahaStatus, !additionalIsKaraha {
                             Text(qiratLabel)
                                 .font(.system(size: 9, weight: .semibold, design: .serif))
                                 .foregroundStyle(Color.orange.opacity(0.9))
@@ -401,7 +433,7 @@ struct PrayerTimesWidgetView: View {
             Text(title)
                 .font(.system(size: 11, weight: isCurrent ? .semibold : .regular, design: .serif))
                 .foregroundStyle(
-                    isCurrent ? .white : (isNext ? Color.orange.opacity(0.92) : Color.white.opacity(0.62))
+                    isCurrent ? .primary : (isNext ? Color.orange.opacity(0.92) : Color.primary.opacity(0.62))
                 )
 
             Spacer(minLength: 6)
@@ -410,18 +442,18 @@ struct PrayerTimesWidgetView: View {
                 .font(.system(size: 11, weight: isCurrent ? .semibold : .regular, design: .serif))
                 .monospacedDigit()
                 .foregroundStyle(
-                    isCurrent ? .white : (isNext ? Color.orange.opacity(0.92) : Color.white.opacity(0.62))
+                    isCurrent ? .primary : (isNext ? Color.orange.opacity(0.92) : Color.primary.opacity(0.62))
                 )
         }
         .padding(.vertical, 4)
         .padding(.horizontal, 8)
         .background(
             RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .fill(isCurrent ? Color.white.opacity(0.09) : (isNext ? Color.orange.opacity(0.12) : Color.clear))
+                .fill(isCurrent ? Color.primary.opacity(0.09) : (isNext ? Color.orange.opacity(0.12) : Color.clear))
         )
         .overlay(
             RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .stroke(isCurrent ? Color.white.opacity(0.08) : Color.clear, lineWidth: 1)
+                .stroke(isCurrent ? Color.primary.opacity(0.08) : Color.clear, lineWidth: 1)
         )
     }
 
@@ -433,11 +465,11 @@ struct PrayerTimesWidgetView: View {
         VStack(spacing: 6) {
             Image(systemName: "exclamationmark.icloud")
                 .font(.system(size: 22))
-                .foregroundStyle(Color.white.opacity(0.55))
+                .foregroundStyle(Color.primary.opacity(0.55))
 
             Text("Keine Gebetszeiten verfügbar")
                 .font(.system(size: 12, weight: .medium, design: .serif))
-                .foregroundStyle(Color.white.opacity(0.55))
+                .foregroundStyle(Color.primary.opacity(0.55))
                 .multilineTextAlignment(.center)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -640,6 +672,54 @@ struct PrayerTimesWidgetView: View {
         return LastThirdOfNightResolver.window(now: entry.date, store: store, settings: autoSettings)
     }
 
+    /// `nil` whenever a required previous/next cached day is missing —
+    /// never a fabricated window. See `IshaMidnightKarahaResolver`.
+    private func postMidnightKarahaWindow() -> IshaMidnightKarahaResolver.ResolvedWindow? {
+        let autoSettings = settingsStore.loadAutoSettings()
+        return IshaMidnightKarahaResolver.window(now: entry.date, store: store, settings: autoSettings)
+    }
+
+    /// `nil` whenever the approximation is suppressed (implausible
+    /// latitude) or there's no cached data yet. See `QiratTimeResolver`.
+    private func preMaghribKarahaWindow() -> QiratTimeResolver.ApproximateWindow? {
+        let autoSettings = settingsStore.loadAutoSettings()
+        return QiratTimeResolver.windows(now: entry.date, store: store, settings: autoSettings).lateMaghribKaraha
+    }
+
+    /// Every boundary marker to draw on the medium widget's progress bar
+    /// for the given status — the same "Letztes Drittel"/post-midnight
+    /// Isha Karāha/Karāha-vor-Maghrib boundaries the Gebetszeiten page's
+    /// own "Aktueller Status" bar marks (see `CurrentStatusCard.markers`
+    /// there), just without a clock-time label here — only the tick
+    /// itself. Each value is a 0...1 fraction of `displayStart...
+    /// displayEnd`.
+    private func progressMarkerFractions(
+        status: CurrentPrayerStatusCalculator.Status?,
+        displayStart: Date,
+        displayEnd: Date
+    ) -> [Double] {
+        guard let status else { return [] }
+
+        let boundaries: [Date?]
+        switch status.kind {
+        case .isha:
+            boundaries = [postMidnightKarahaWindow()?.start, lastThirdOfNightWindow()?.start]
+        case .asr:
+            boundaries = [preMaghribKarahaWindow()?.start]
+        default:
+            boundaries = []
+        }
+
+        let total = displayEnd.timeIntervalSince(displayStart)
+        guard total > 0 else { return [] }
+
+        return boundaries.compactMap { date in
+            guard let date else { return nil }
+            let offset = date.timeIntervalSince(displayStart)
+            return min(max(offset / total, 0), 1)
+        }
+    }
+
     /// `nil` unless `entry.date` currently falls inside the Sonnenaufgangs-
     /// Karāha window (starts exactly at Shuruk, never Fajr) or the
     /// approximate Karāha-vor-Maghrib window (see `QiratTimeResolver`) — a
@@ -725,7 +805,8 @@ struct PrayerTimesWidgetView: View {
             sunriseKarahaWindow: qiratWindows.sunriseKaraha,
             preDhuhrKarahaWindow: qiratWindows.preDhuhrKaraha,
             preMaghribKarahaWindow: qiratWindows.lateMaghribKaraha,
-            lastThirdWindow: lastThirdOfNightWindow()
+            lastThirdWindow: lastThirdOfNightWindow(),
+            postMidnightKarahaWindow: postMidnightKarahaWindow()
         )
     }
 
@@ -789,18 +870,37 @@ extension View {
     func widgetBackground() -> some View {
         if #available(iOSApplicationExtension 17.0, *) {
             self.containerBackground(for: .widget) {
-                LinearGradient(
-                    colors: [
-                        Color.black.opacity(0.96),
-                        Color.black.opacity(0.88)
-                    ],
-                    startPoint: .topLeading,
-                    endPoint: .bottomTrailing
-                )
+                WidgetBackgroundGradient()
             }
         } else {
-            self.background(Color.black.opacity(0.92))
+            self.background(WidgetBackgroundGradient())
         }
+    }
+}
+
+/// The widget's own page background — the near-black gradient this app
+/// has always used in dark mode (unchanged), and a cream gradient in
+/// light mode matching the main app's own light-mode look exactly (the
+/// same RGB values as `Assets.xcassets/AppBackground.colorset`'s light
+/// variant). Reads `colorScheme` straight from the environment, so it
+/// follows the iPhone's own system Light/Dark Mode setting — widgets have
+/// no access to the app's own in-app appearance override
+/// (`AppearanceSettingsStore`), and this never needs one: the system
+/// setting is exactly what's being asked for here.
+private struct WidgetBackgroundGradient: View {
+    @Environment(\.colorScheme) private var colorScheme
+
+    var body: some View {
+        LinearGradient(
+            colors: colorScheme == .dark
+                ? [Color.black.opacity(0.96), Color.black.opacity(0.88)]
+                : [
+                    Color(red: 1.0, green: 0.99, blue: 0.97),
+                    Color(red: 0.980, green: 0.973, blue: 0.953)
+                ],
+            startPoint: .topLeading,
+            endPoint: .bottomTrailing
+        )
     }
 }
 

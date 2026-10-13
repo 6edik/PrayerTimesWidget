@@ -22,6 +22,12 @@ nonisolated enum CurrentPrayerStatusCalculator {
         case preMaghribKaraha
         case maghrib
         case isha
+        /// Isha delayed past Islamic midnight (the midpoint between
+        /// Maghrib and the following Fajr) — see
+        /// `IshaMidnightKarahaResolver`. Only ever surfaces during an
+        /// active Isha window, and only until `lastThirdOfNight` takes
+        /// over as the more specific state.
+        case postMidnightKaraha
         case lastThirdOfNight
     }
 
@@ -35,10 +41,10 @@ nonisolated enum CurrentPrayerStatusCalculator {
         /// this `Status` was resolved for.
         let progress: Double
         /// A second, concurrently-active state worth surfacing alongside
-        /// `kind` as a compact marking — `.lastThirdOfNight` overlapping
-        /// an active Isha window, or `.preMaghribKaraha` overlapping an
-        /// active Asr window — never a replacement for `kind` itself, and
-        /// never equal to it.
+        /// `kind` as a compact marking — `.lastThirdOfNight` or
+        /// `.postMidnightKaraha` overlapping an active Isha window, or
+        /// `.preMaghribKaraha` overlapping an active Asr window — never a
+        /// replacement for `kind` itself, and never equal to it.
         let additionalKind: Kind?
     }
 
@@ -50,11 +56,13 @@ nonisolated enum CurrentPrayerStatusCalculator {
     /// 2. The current obligatory prayer (Fajr/Dhuhr/Asr/Maghrib/Isha).
     ///    The Karāha vor Maghrib never promotes itself above Asr here —
     ///    it only ever rides along as `additionalKind`, exactly like the
-    ///    last third of the night rides along with Isha. Asr's own
+    ///    last third of the night (or, before that starts, the
+    ///    post-midnight Isha Karāha) rides along with Isha. Asr's own
     ///    row/highlight elsewhere is unaffected either way.
     /// 3. Duha.
-    /// 4. The last third of the night / the Karāha vor Maghrib, as a
-    ///    standalone main status — only reached if the obligatory window
+    /// 4. The last third of the night / the Karāha vor Maghrib / the
+    ///    post-midnight Isha Karāha, as a standalone main status — only
+    ///    reached if the obligatory window
     ///    itself couldn't be resolved at all (never double-counted with
     ///    step 2's `additionalKind`).
     ///
@@ -70,6 +78,8 @@ nonisolated enum CurrentPrayerStatusCalculator {
     ///     (its `lateMaghribKaraha`) — reused as-is, never a second,
     ///     independently computed window.
     ///   - lastThirdWindow: already resolved via `LastThirdOfNightResolver`.
+    ///   - postMidnightKarahaWindow: already resolved via
+    ///     `IshaMidnightKarahaResolver`.
     /// - Returns: `nil` whenever none of the above windows are available or
     ///   active at `now` — never a fabricated status.
     static func resolve(
@@ -79,7 +89,8 @@ nonisolated enum CurrentPrayerStatusCalculator {
         sunriseKarahaWindow: QiratTimeResolver.ApproximateWindow?,
         preDhuhrKarahaWindow: QiratTimeResolver.ApproximateWindow?,
         preMaghribKarahaWindow: QiratTimeResolver.ApproximateWindow?,
-        lastThirdWindow: LastThirdOfNightResolver.ResolvedWindow?
+        lastThirdWindow: LastThirdOfNightResolver.ResolvedWindow?,
+        postMidnightKarahaWindow: IshaMidnightKarahaResolver.ResolvedWindow?
     ) -> Status? {
         func isActive(_ karahaWindow: QiratTimeResolver.ApproximateWindow?) -> Bool {
             karahaWindow.map { now >= $0.start && now < $0.end } ?? false
@@ -87,6 +98,7 @@ nonisolated enum CurrentPrayerStatusCalculator {
 
         let lastThirdActive = lastThirdWindow.map { now >= $0.start && now < $0.end } ?? false
         let preMaghribKarahaActive = isActive(preMaghribKarahaWindow)
+        let postMidnightKarahaActive = postMidnightKarahaWindow.map { now >= $0.start && now < $0.end } ?? false
 
         func makeStatus(kind: Kind, start: Date, end: Date, additionalKind: Kind?) -> Status? {
             let total = end.timeIntervalSince(start)
@@ -115,6 +127,12 @@ nonisolated enum CurrentPrayerStatusCalculator {
             let additionalKind: Kind?
             if obligatoryKind == .isha, lastThirdActive {
                 additionalKind = .lastThirdOfNight
+            } else if obligatoryKind == .isha, postMidnightKarahaActive {
+                // The last third always wins once it starts — it's the
+                // more specific state, and (since the last third always
+                // starts after the midpoint) it would otherwise never get
+                // to show at all, this window being its superset.
+                additionalKind = .postMidnightKaraha
             } else if obligatoryKind == .asr, preMaghribKarahaActive {
                 additionalKind = .preMaghribKaraha
             } else {
@@ -135,6 +153,10 @@ nonisolated enum CurrentPrayerStatusCalculator {
         }
 
         if let status = activeKaraha(preMaghribKarahaWindow, kind: .preMaghribKaraha) { return status }
+
+        if postMidnightKarahaActive, let postMidnightKarahaWindow {
+            return makeStatus(kind: .postMidnightKaraha, start: postMidnightKarahaWindow.start, end: postMidnightKarahaWindow.end, additionalKind: nil)
+        }
 
         return nil
     }

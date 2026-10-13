@@ -36,7 +36,7 @@ struct NotificationSettingsView: View {
                 }
 
                 Section("Karāha") {
-                    Toggle("Sonnenaufgang, vor Dhuhr & vor Maghrib (Näherung)", isOn: bindingForQirat().isEnabled)
+                    Toggle("Sonnenaufgang, vor Dhuhr, vor Maghrib & Isha nach Mitternacht", isOn: bindingForQirat().isEnabled)
                 }
 
                 Section("Freiwilliges Fasten") {
@@ -406,9 +406,10 @@ private struct NotificationInfoSheet: View {
                 Section("Karāha") {
                     Text("„Karāha“ bezeichnet Zeitfenster, in denen freiwillige Gebete nach überlieferter Auffassung unterlassen werden sollen: kurz nach Sonnenaufgang, um die Zeit des Sonnenhöchststands kurz vor Dhuhr, und kurz vor Sonnenuntergang. Die fünf Pflichtgebete sind davon nicht betroffen.")
                     Text("„Der Gesandte Allahs verbot uns, zu drei Zeiten zu beten oder unsere Toten zu begraben: wenn die Sonne sichtbar aufgeht, bis sie vollständig aufgestiegen ist; wenn sie ihren Höchststand erreicht, bis sie darüber hinweg ist; und wenn sie sich zum Untergang neigt, bis sie vollständig untergegangen ist.“ – überliefert von ʿUqba ibn ʿĀmir al-Juhanī, Sahih Muslim (Hadith-Nummer je nach Ausgabe unterschiedlich).")
-                    Text("Erinnert zu Beginn dreier täglicher Zeitfenster: Sonnenaufgangs-Karāha ab Shuruk (ungefähr 15–20 Minuten), einer kurzen Näherung vor Dhuhr, und einer Näherung kurz vor Maghrib.")
+                    Text("Erinnert zu Beginn vierer täglicher Zeitfenster: Sonnenaufgangs-Karāha ab Shuruk (ungefähr 15–20 Minuten), einer kurzen Näherung vor Dhuhr, einer Näherung kurz vor Maghrib, und Isha nach Mitternacht.")
                     Text("Die Sonnenaufgangs-Karāha beginnt exakt mit Shuruk, nie mit Fajr. Das ist eine andere Zeit als die separate hanafitische Einschränkung für freiwillige Gebete zwischen Fajr und Sonnenaufgang, die hier nicht als Benachrichtigung angeboten wird.")
-                    Text("Das Fenster vor Dhuhr endet exakt mit Dhuhrs Beginn. Das Fenster vor Maghrib beginnt NICHT mit Asr – Asr bleibt bis Maghrib gültig. Alle drei Zeitfenster-Enden/-Beginne sind einstellbare Näherungswerte, keine exakten Grenzen, da keine orts- und tagesgenaue Quelle für den exakten Beginn dieser Phasen vorliegt.")
+                    Text("Das Fenster vor Dhuhr endet exakt mit Dhuhrs Beginn. Das Fenster vor Maghrib beginnt NICHT mit Asr – Asr bleibt bis Maghrib gültig. Diese beiden sowie die Sonnenaufgangs-Karāha sind einstellbare Näherungswerte, keine exakten Grenzen, da keine orts- und tagesgenaue Quelle für den exakten Beginn dieser Phasen vorliegt.")
+                    Text("Anders als die drei Fenster oben betrifft die Karāha nach Mitternacht kein freiwilliges Gebet, sondern Isha selbst: Isha bleibt bis Fajr gültig, sollte aber nach überlieferter Auffassung nicht bis Mitternacht – der exakten Mitte zwischen Maghrib und dem folgenden Fajr – aufgeschoben werden. Dieses Zeitfenster ist kein Näherungswert, sondern eine exakte Berechnung.")
                 }
                 .font(.caption)
                 .foregroundStyle(.secondary)

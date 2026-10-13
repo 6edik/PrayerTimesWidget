@@ -82,6 +82,8 @@
 				Shared/CurrentPrayerStatusDisplay.swift,
 				Shared/DuhaCalculator.swift,
 				Shared/HijriDateFormatting.swift,
+				Shared/IshaMidnightKarahaCalculator.swift,
+				Shared/IshaMidnightKarahaResolver.swift,
 				Shared/LastThirdOfNightCalculator.swift,
 				Shared/LastThirdOfNightResolver.swift,
 				Shared/LegacyLocationMigrator.swift,
