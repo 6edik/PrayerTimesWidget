@@ -7,5 +7,6 @@ struct PrayerTimesWidget: WidgetBundle {
         PrayerTimesWidgetStructure()
         PrayerCountdownLockWidgetStructure()
         PrayerDateLockWidgetStructure()
+        PrayerNextLockWidgetStructure()
     }
 }

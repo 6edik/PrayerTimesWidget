@@ -36,6 +36,33 @@ nonisolated enum HijriDateFormatting {
         return formatter.string(from: date)
     }
 
+    /// Short localized text with an abbreviated month, e.g. "5. Ram. 1447".
+    /// For contexts too narrow for `displayText(for:)`'s full month name
+    /// (e.g. the lock-screen inline date widget, which gets a single
+    /// unwrapped, non-scrolling line).
+    nonisolated static func shortDisplayText(for date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.calendar = calendar()
+        formatter.locale = .autoupdatingCurrent
+        formatter.setLocalizedDateFormatFromTemplate("d MMM y")
+        return formatter.string(from: date)
+    }
+
+    /// Same short form as `shortDisplayText(for:)`, but the month name is
+    /// always Arabic script, regardless of the device's own language —
+    /// matching Apple's own Lock Screen date widget, which renders the
+    /// Hijri month in Arabic even on a German-language device. The
+    /// `@numbers=latn` locale variant keeps the day/year digits Western
+    /// (e.g. "29", "1448"), not the Arabic locale's own Eastern
+    /// Arabic-Indic numerals.
+    nonisolated static func shortDisplayTextArabicMonth(for date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.calendar = calendar()
+        formatter.locale = Locale(identifier: "ar@numbers=latn")
+        formatter.setLocalizedDateFormatFromTemplate("d MMM y")
+        return formatter.string(from: date)
+    }
+
     /// Just the Hijri day-of-month, e.g. "5" — matches what the calendar
     /// grid cell shows for the same Gregorian date.
     nonisolated static func dayText(for date: Date) -> String {

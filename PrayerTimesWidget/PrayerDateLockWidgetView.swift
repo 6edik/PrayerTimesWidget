@@ -1,28 +1,22 @@
 import SwiftUI
 import WidgetKit
 
-/// A third, separately selectable lock-screen widget — just the Gregorian
-/// and Hijri date, for anyone who wants the date on their lock screen
-/// without any prayer-time information. `.accessoryInline` renders as a
-/// single line of text next to the lock-screen clock, so this is
-/// deliberately just one `Text`, not a `VStack` like the other lock-screen
-/// layouts in `PrayerCountdownLockWidgetView`/`PrayerTimesWidgetView`.
+/// A third, separately selectable lock-screen widget — just the Hijri
+/// date, for anyone who wants it on their lock screen without any
+/// prayer-time information and without the Gregorian date (already
+/// covered by Apple's own Lock Screen date widget). `.accessoryInline`
+/// renders as a single, non-wrapping, non-scrolling line of text that
+/// often shares its row with another widget/the clock — day + an
+/// Arabic-script abbreviated month + year (see
+/// `HijriDateFormatting.shortDisplayTextArabicMonth`), matching the Hijri
+/// half of Apple's own Lock Screen date widget. Deliberately just one
+/// `Text`, not a `VStack` like the other lock-screen layouts in
+/// `PrayerCountdownLockWidgetView`/`PrayerTimesWidgetView`.
 struct PrayerDateLockWidgetView: View {
     var entry: Provider.Entry
 
     var body: some View {
-        Text("\(Self.gregorianDateText(for: entry.date)) • \(HijriDateFormatting.displayText(for: entry.date))")
+        Text(HijriDateFormatting.shortDisplayTextArabicMonth(for: entry.date))
             .widgetBackground()
-    }
-
-    /// Same German-locale format as the Home screen's own Gregorian date
-    /// line (`PrayerTimesHomeView.formattedGregorianDate`) — kept as a
-    /// separate copy here since that one is `private` to its view and the
-    /// widget extension can't import it directly.
-    private static func gregorianDateText(for date: Date) -> String {
-        let formatter = DateFormatter()
-        formatter.locale = Locale(identifier: "de_DE")
-        formatter.dateFormat = "d. MMMM yyyy"
-        return formatter.string(from: date)
     }
 }

@@ -10,4 +10,9 @@ enum AppGroup {
     // A third, separately selectable lock-screen widget — the inline
     // Gregorian/Hijri date, distinct from both prayer-time layouts above.
     nonisolated static let widgetKindDate = "PrayerTimesDateWidget"
+    // A fourth, separately selectable lock-screen widget — the inline
+    // "current prayer + start time + live countdown" layout, the
+    // `.accessoryInline` counterpart to `widgetKindCountdown`'s
+    // `.accessoryRectangular` layout.
+    nonisolated static let widgetKindNext = "PrayerTimesNextWidget"
 }
