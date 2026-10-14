@@ -1,10 +1,11 @@
 import SwiftUI
 import WidgetKit
 
-/// A fourth, separately selectable lock-screen widget — the current
+/// A fourth, separately selectable lock-screen widget — the *upcoming*
 /// prayer's symbol, its abbreviated name, start time, and a live
-/// countdown to the next prayer, all on one `.accessoryInline` line (e.g.
-/// "☀︎ DHR 12:15 · 2:45:10"). The `.accessoryRectangular` counterpart to
+/// countdown to it (how much longer the current prayer's own window still
+/// has left), all on one `.accessoryInline` line (e.g.
+/// "☀︎ ASR 15:00 · 2:45:10"). The `.accessoryRectangular` counterpart to
 /// this same data is `PrayerCountdownLockWidgetView`; this one is just
 /// the single-line version for whoever wants it inline instead.
 /// Interpolating `Image(systemName:)` into the `Text` string embeds the
@@ -19,9 +20,15 @@ struct PrayerNextLockWidgetView: View {
     var body: some View {
         Group {
             if let window = resolvedWindow() {
-                Text("\(Image(systemName: PrayerStatusIcon.symbolName(forCanonicalRow: window.currentName))) \(shortLabel(for: window.currentName)) \(window.currentTime) · \(window.end, style: .timer)")
+                Text("\(Image(systemName: PrayerStatusIcon.symbolName(forCanonicalRow: window.nextName))) \(shortLabel(for: window.nextName)) \(window.nextTime) · \(window.end, style: .timer)")
+                    // Same serif design every other widget family in this
+                    // app already uses — this line had no explicit font
+                    // at all before, so it rendered in the plain system
+                    // font instead of matching the rest of the app.
+                    .font(.system(.caption2, design: .serif))
             } else {
                 Text("Keine Daten")
+                    .font(.system(.caption2, design: .serif))
             }
         }
         .widgetBackground()
